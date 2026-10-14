@@ -5,9 +5,13 @@ using System.Text.Json;
 namespace QuotaOrb.Services;
 
 public sealed record SwitchJournal(int Version, string Home, string AccountRecordId,
-    byte[] Original, DesktopIdentity Target, string InstalledHash, string Stage, bool IndependentTarget = false);
+    byte[] Original, DesktopIdentity Target, string InstalledHash, string Stage, bool IndependentTarget = false,
+    bool AuthorizedTarget = false);
 
-internal sealed record DesktopLoginSnapshot(int QuotaOrbSnapshotVersion, byte[] Login, bool PendingEnrollment);
+internal sealed record DesktopLoginSnapshot(int QuotaOrbSnapshotVersion, byte[] Login, bool PendingEnrollment,
+    bool AuthorizedForSwitching = false);
+
+public enum DesktopAuthorizationState { Missing, Legacy, Authorized, Unavailable }
 
 // Separate from accounts.db: ordinary account export and software backup cannot include OAuth snapshots.
 public sealed class DesktopLoginVault
@@ -21,10 +25,11 @@ public sealed class DesktopLoginVault
     private string Entry(string id) => Guid.TryParseExact(id, "N", out _) ? Path.Combine(root, id + ".bin") : throw new InvalidDataException("账号标识无效。");
     public bool Has(string id) => File.Exists(Entry(id));
     public bool HasPending => File.Exists(Path.Combine(root, "pending.bin"));
-    public void Save(string id, byte[] bytes, bool pendingEnrollment = false)
+    public void Save(string id, byte[] bytes, bool pendingEnrollment = false, bool authorizedForSwitching = false)
     {
         DesktopLogin.Inspect(bytes);
-        var serialized = JsonSerializer.SerializeToUtf8Bytes(new DesktopLoginSnapshot(2, bytes, pendingEnrollment));
+        var serialized = JsonSerializer.SerializeToUtf8Bytes(new DesktopLoginSnapshot(2, bytes, pendingEnrollment,
+            pendingEnrollment || authorizedForSwitching));
         try { Write(Entry(id), serialized, "account/" + id); }
         finally { CryptographicOperations.ZeroMemory(serialized); }
     }
@@ -47,19 +52,26 @@ public sealed class DesktopLoginVault
                 throw new InvalidDataException("桌面登录缓存格式不支持，请重新授权。");
             DesktopLogin.Inspect(login);
             login = null;
-            return snapshot;
+            // Previous previews set PendingEnrollment only after a successful independent
+            // authorization. A plain desktop copy has no evidence of that authorization.
+            return snapshot with { AuthorizedForSwitching = snapshot.AuthorizedForSwitching || snapshot.PendingEnrollment };
         }
         finally { CryptographicOperations.ZeroMemory(bytes); if (login is not null) CryptographicOperations.ZeroMemory(login); }
     }
     internal void SaveOutgoing(string id, byte[] bytes)
     {
+        var authorized = false;
         if (Has(id))
         {
             var saved = LoadSnapshot(id);
-            try { if (saved.PendingEnrollment) return; }
+            try
+            {
+                if (saved.PendingEnrollment) return;
+                authorized = saved.AuthorizedForSwitching && DesktopLogin.Inspect(saved.Login).Matches(DesktopLogin.Inspect(bytes));
+            }
             finally { CryptographicOperations.ZeroMemory(saved.Login); }
         }
-        Save(id, bytes);
+        Save(id, bytes, authorizedForSwitching: authorized);
     }
     public void Remove(string id) { if (HasPending) throw new IOException("请先处理未完成的切换。"); var p = Entry(id); SwitchFiles.CheckPath(p); File.Delete(p); }
     public void SavePending(SwitchJournal journal)

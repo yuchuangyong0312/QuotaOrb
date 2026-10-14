@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace QuotaOrb.Services;
 
@@ -35,14 +36,33 @@ public sealed class DesktopSwitcher
     }
 
     public bool HasSaved(AccountRecord account) => vault.Has(account.Id);
+    public DesktopAuthorizationState GetAuthorizationState(AccountRecord account)
+    {
+        if (!vault.Has(account.Id)) return DesktopAuthorizationState.Missing;
+        byte[]? login = null;
+        try
+        {
+            var saved = vault.LoadSnapshot(account.Id); login = saved.Login;
+            DesktopLogin.MatchAccount(DesktopLogin.Inspect(login), account);
+            return saved.AuthorizedForSwitching ? DesktopAuthorizationState.Authorized : DesktopAuthorizationState.Legacy;
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or CryptographicException or JsonException)
+        { return DesktopAuthorizationState.Unavailable; }
+        finally { Clear(login); }
+    }
+    public bool HasAuthorized(AccountRecord account) => GetAuthorizationState(account) == DesktopAuthorizationState.Authorized;
     public string GetMessage(AccountRecord? account)
     {
         if (recoveryMessage is { } recovery) return recovery;
         if (account is null) return "请选择需要授权或切换的账号。";
         if (accountMessages.TryGetValue(account.Id, out var message)) return message;
-        return HasSaved(account)
-            ? $"「{account.Name}」已保存切换授权。使用时从 Codex 托盘退出程序，再点击“切换并打开 Codex”。"
-            : "请点击“授权切换登录”，先为此账号完成授权。";
+        return GetAuthorizationState(account) switch
+        {
+            DesktopAuthorizationState.Authorized => $"「{account.Name}」已保存切换授权。使用时从 Codex 托盘退出程序，再点击“切换并打开 Codex”。",
+            DesktopAuthorizationState.Legacy => "检测到旧版桌面登录记录，尚未确认独立切换授权。请先点击“授权切换登录”。",
+            DesktopAuthorizationState.Unavailable => "此账号的切换登录缓存无法确认，请重新点击“授权切换登录”。",
+            _ => "请点击“授权切换登录”，先为此账号完成授权。"
+        };
     }
 
     public async Task<LoginResult> AuthorizeAsync(AccountRecord account, LoginMethod method, Action<LoginPrompt> present, CancellationToken token)
@@ -113,6 +133,8 @@ public sealed class DesktopSwitcher
             runtime.RequireStopped();
             var saved = vault.LoadSnapshot(target.Id);
             replacement = saved.Login;
+            if (!saved.AuthorizedForSwitching)
+                throw new InvalidOperationException("此账号尚未完成独立切换授权，请先点击“授权切换登录”。");
             var identity = DesktopLogin.Inspect(replacement);
             DesktopLogin.MatchAccount(identity, target);
             original = auth.Read();
@@ -125,10 +147,10 @@ public sealed class DesktopSwitcher
             if (outgoing.Matches(identity) && !saved.PendingEnrollment)
             {
                 Clear(replacement); replacement = original.ToArray();
-                vault.Save(target.Id, original);
+                vault.Save(target.Id, original, authorizedForSwitching: saved.AuthorizedForSwitching);
             }
             token.ThrowIfCancellationRequested();
-            journal = new(1, runtime.Home, target.Id, original, identity, DesktopLogin.Fingerprint(replacement), "prepared", saved.PendingEnrollment);
+            journal = new(1, runtime.Home, target.Id, original, identity, DesktopLogin.Fingerprint(replacement), "prepared", saved.PendingEnrollment, saved.AuthorizedForSwitching);
             vault.SavePending(journal);
             runtime.RequireStopped();
             auth.Replace(replacement, DesktopLogin.Fingerprint(original));
@@ -144,7 +166,7 @@ public sealed class DesktopSwitcher
             try
             {
                 if (!DesktopLogin.Inspect(refreshed).Matches(identity)) throw new InvalidDataException("核验后账号发生变化，已停止启动。");
-                vault.Save(target.Id, refreshed, journal.IndependentTarget);
+                vault.Save(target.Id, refreshed, journal.IndependentTarget, journal.AuthorizedTarget);
                 journal = journal with { Stage = "verified", InstalledHash = DesktopLogin.Fingerprint(refreshed) };
                 vault.SavePending(journal);
             }
@@ -164,7 +186,7 @@ public sealed class DesktopSwitcher
             try
             {
                 if (!DesktopLogin.Inspect(launched).Matches(identity)) throw new InvalidDataException("启动后登录状态发生变化，请退出 Codex 后恢复。");
-                vault.Save(target.Id, launched);
+                vault.Save(target.Id, launched, authorizedForSwitching: journal.AuthorizedTarget);
             }
             finally { Clear(launched); }
             vault.Complete();
@@ -186,7 +208,7 @@ public sealed class DesktopSwitcher
                 CodexRpcException { Throttled: true } => "官方核验请求过于频繁，请稍后重试。",
                 CodexRpcException => "官方核验暂未成功，请检查网络后重试；这不代表账号登录已失效。",
                 InvalidDataException or InvalidOperationException => error.Message,
-                IOException => "登录文件无法读写，请检查目录权限或重新保存桌面登录。",
+                IOException => "登录文件无法读写，请检查目录权限或重新点击“授权切换登录”。",
                 _ => "切换未完成。"
             };
             SetMessage(restored ? reason + (journal is null ? "" : " 已恢复切换前的本地登录。")
@@ -230,7 +252,7 @@ public sealed class DesktopSwitcher
             finally { Clear(again); }
             runtime.RequireStopped();
             token.ThrowIfCancellationRequested();
-            foreach (var account in accounts.Where(a => MatchesRecord(identity, a))) vault.Save(account.Id, current);
+            foreach (var account in accounts.Where(a => MatchesRecord(identity, a))) vault.SaveOutgoing(account.Id, current);
             // Explicit recovery choice: keep the login file exactly as it is and release
             // the pending transaction, even when the user has since logged into account C.
             vault.Complete();
@@ -254,7 +276,7 @@ public sealed class DesktopSwitcher
             if (!DesktopLogin.Inspect(current).Matches(journal.Target))
                 throw new InvalidDataException("当前登录不是此次切换目标，未覆盖新的登录。");
             // Preserve even a rotated target token if the switch later needs to roll back.
-            vault.Save(journal.AccountRecordId, current, journal.IndependentTarget);
+            vault.Save(journal.AccountRecordId, current, journal.IndependentTarget, journal.AuthorizedTarget);
             if (!journal.IndependentTarget && DesktopLogin.Inspect(journal.Original).Matches(journal.Target)) { vault.Complete(); return; }
             runtime.RequireStopped();
             auth.Replace(journal.Original, DesktopLogin.Fingerprint(current));

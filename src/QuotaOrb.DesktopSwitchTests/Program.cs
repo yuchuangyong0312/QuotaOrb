@@ -25,9 +25,78 @@ void Check(string name, bool ok) { if (!ok) throw new Exception("FAIL: " + name)
 async Task<bool> Reject(Func<Task> action) { try { await action(); return false; } catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or IOException or CryptographicException) { return true; } }
 Fixture New() => new(Path.Combine(root, Guid.NewGuid().ToString("N")));
 
+foreach (var wrapped in new[] { false, true })
+{
+    var f = New(); var oldLogin = Fixture.Login("b", "old-desktop-copy");
+    var payload = wrapped ? JsonSerializer.SerializeToUtf8Bytes(new { QuotaOrbSnapshotVersion = 2, Login = oldLogin, PendingEnrollment = false }) : oldLogin;
+    var encrypted = ProtectedData.Protect(payload, Encoding.UTF8.GetBytes("QuotaOrb/desktop-login/v1/account/" + f.B.Id), DataProtectionScope.CurrentUser);
+    var cachePath = Path.Combine(f.Root, "data", "desktop-logins", f.B.Id + ".bin");
+    File.WriteAllBytes(cachePath, encrypted);
+    Check("an old desktop cache is not advertised as completed switching authorization: " + wrapped,
+        !f.Switcher.GetMessage(f.B).Contains("已保存切换授权") && f.Switcher.GetMessage(f.B).Contains("授权切换登录"));
+    Check("legacy cache disables the switch eligibility used by the UI: " + wrapped,
+        !f.Switcher.HasAuthorized(f.B) && f.Switcher.GetAuthorizationState(f.B) == DesktopAuthorizationState.Legacy);
+    Check("a legacy cache cannot start a switch or touch the active login: " + wrapped,
+        await Reject(() => f.Switch()) && f.Probe.Calls == 0 && f.Runtime.Launches == 0 && f.Current().SequenceEqual(f.Original) && !f.Vault.HasPending);
+    Check("legacy status inspection preserves the existing encrypted login: " + wrapped,
+        File.ReadAllBytes(cachePath).SequenceEqual(encrypted) && f.Vault.Load(f.B.Id).SequenceEqual(oldLogin));
+    var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => new FakeEnrollmentSession(home, "b"));
+    var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    var result = await switcher.AuthorizeAsync(f.B, LoginMethod.Browser, _ => { }, default);
+    await switcher.SwitchAsync(f.B, [f.A, f.B], "codex", default);
+    Check("official enrollment upgrades an old cache and permits switching: " + wrapped,
+        result.Success && f.Runtime.Launches == 1 && DesktopLogin.Inspect(f.Current()).AccountId == "account-b");
+    var restarted = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe);
+    Check("completed enrollment stays authorized after the first launch and restart: " + wrapped, restarted.HasAuthorized(f.B));
+}
+
+{
+    var f = New(); var previous = Fixture.Login("b", "previous-preview-enrollment");
+    var payload = JsonSerializer.SerializeToUtf8Bytes(new { QuotaOrbSnapshotVersion = 2, Login = previous, PendingEnrollment = true });
+    var encrypted = ProtectedData.Protect(payload, Encoding.UTF8.GetBytes("QuotaOrb/desktop-login/v1/account/" + f.B.Id), DataProtectionScope.CurrentUser);
+    var path = Path.Combine(f.Root, "data", "desktop-logins", f.B.Id + ".bin");
+    File.WriteAllBytes(path, encrypted);
+    Check("previous preview's confirmed enrollment is recognized without rewriting it",
+        f.Switcher.HasAuthorized(f.B) && File.ReadAllBytes(path).SequenceEqual(encrypted));
+    f.Probe.Action = (_, _, _) => { f.Write(Fixture.Login("b", "rotated-after-upgrade")); return Task.FromResult(Fixture.Quota("b")); };
+    await f.Switch();
+    f.Runtime.Running = false; f.Probe.Action = (_, _, _) => Task.FromResult(Fixture.Quota("a"));
+    await f.Switcher.SwitchAsync(f.A, [f.A, f.B], "codex", default);
+    var restarted = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe);
+    Check("authorization survives token rotation, leaving the account and tool restart",
+        restarted.HasAuthorized(f.B) && f.Vault.Load(f.B.Id).SequenceEqual(Fixture.Login("b", "rotated-after-upgrade")));
+}
+{
+    var f = New(); f.Vault.Remove(f.A.Id);
+    await f.Switch();
+    Check("automatically preserving an outgoing desktop session does not grant independent authorization",
+        f.Switcher.HasSaved(f.A) && !f.Switcher.HasAuthorized(f.A) && f.Switcher.GetAuthorizationState(f.A) == DesktopAuthorizationState.Legacy
+        && !f.Switcher.GetMessage(f.A).Contains("已保存切换授权"));
+}
+{
+    var f = New(); var path = Path.Combine(f.Root, "data", "desktop-logins", f.B.Id + ".bin");
+    File.WriteAllBytes(path, [1, 2, 3]);
+    Check("an unreadable cache never advertises authorization or enables switching",
+        !f.Switcher.HasAuthorized(f.B) && f.Switcher.GetAuthorizationState(f.B) == DesktopAuthorizationState.Unavailable
+        && !f.Switcher.GetMessage(f.B).Contains("已保存切换授权"));
+    f.Vault.Save(f.B.Id, Fixture.Login("a"), authorizedForSwitching: true);
+    Check("an authorized marker for a different identity cannot enable switching",
+        !f.Switcher.HasAuthorized(f.B) && await Reject(() => f.Switch()) && f.Runtime.Launches == 0 && f.Current().SequenceEqual(f.Original));
+}
+{
+    var f = New(); f.Vault.Save(f.B.Id, Fixture.Login("b", "legacy"));
+    var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => new FakeEnrollmentSession(home, "a"));
+    var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    var result = await switcher.AuthorizeAsync(f.B, LoginMethod.Browser, _ => { }, default);
+    var restarted = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe);
+    Check("a failed new authorization cannot promote a legacy desktop copy",
+        !result.Success && !switcher.HasAuthorized(f.B) && restarted.GetAuthorizationState(f.B) == DesktopAuthorizationState.Legacy);
+}
+
 {
     var f = New(); await f.Switcher.SaveCurrentAsync(f.A, default);
     Check("saving current desktop login never invokes the network probe", f.Probe.Calls == 0 && f.Switcher.HasSaved(f.A));
+    Check("manual desktop capture does not claim independent authorization", !f.Switcher.HasAuthorized(f.A));
     var encrypted = File.ReadAllBytes(Path.Combine(f.Root, "data", "desktop-logins", f.A.Id + ".bin"));
     Check("desktop credential cache is encrypted", !Encoding.UTF8.GetString(encrypted).Contains("SYNTHETIC_REFRESH") && !encrypted.SequenceEqual(f.Original));
     var wrongBefore = f.Vault.Load(f.B.Id);
@@ -72,6 +141,7 @@ Fixture New() => new(Path.Combine(root, Guid.NewGuid().ToString("N")));
     var f = New(); f.Probe.Action = (_, _, _) => { f.Write(Fixture.Login("b", "renewed")); return Task.FromResult(Fixture.Quota("b", 100)); };
     Check("exhausted target is not launched and original login is restored", await Reject(() => f.Switch()) && f.Current().SequenceEqual(f.Original) && f.Runtime.Launches == 0);
     Check("rollback retains a target token renewed during verification", f.Vault.Load(f.B.Id).SequenceEqual(Fixture.Login("b", "renewed")));
+    Check("rollback retains proof of the target's prior authorization", new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe).HasAuthorized(f.B));
 }
 {
     var f = New(); f.Runtime.FailLaunch = true;
@@ -149,7 +219,7 @@ foreach (var restriction in new[] { "spend-control", "individual", "reached-type
     Check("a prepared transaction preserves a later same-account login", await Reject(() => f.Switcher.RestoreAsync(default)) && f.Current().SequenceEqual(laterLogin) && f.Vault.HasPending);
 }
 {
-    var f = New(); f.Vault.Save(f.A.Id, Fixture.Login("a", "old"));
+    var f = New(); f.Vault.Save(f.A.Id, Fixture.Login("a", "old"), authorizedForSwitching: true);
     f.Probe.Action = (_, _, _) => { f.Write(Fixture.Login("a", "renewed")); throw new IOException(); };
     Check("same-account failure never restores a revoked pre-refresh token", await Reject(() => f.Switcher.SwitchAsync(f.A, [f.A, f.B], "codex", default)) && f.Current().SequenceEqual(Fixture.Login("a", "renewed")) && !f.Vault.HasPending);
 }
@@ -355,7 +425,9 @@ sealed class Fixture
         Root = root; Runtime = new(Path.Combine(root, "home")); Directory.CreateDirectory(Runtime.Home);
         File.WriteAllText(Path.Combine(Runtime.Home, "config.toml"), Config);
         File.WriteAllText(Path.Combine(Runtime.Home, "chat-marker.txt"), "untouched"); Write(Original);
-        Vault = new(Path.Combine(root, "data")); Vault.Save(B.Id, Login("b"));
+        Vault = new(Path.Combine(root, "data"));
+        Vault.Save(A.Id, Login("a", "old"), authorizedForSwitching: true);
+        Vault.Save(B.Id, Login("b"), authorizedForSwitching: true);
         Switcher = new(Path.Combine(root, "data"), Runtime, Probe);
     }
     public Task Switch() => Switcher.SwitchAsync(B, [A, B], "codex", default);
