@@ -5,7 +5,9 @@ using System.Text.Json;
 namespace QuotaOrb.Services;
 
 public sealed record SwitchJournal(int Version, string Home, string AccountRecordId,
-    byte[] Original, DesktopIdentity Target, string InstalledHash, string Stage);
+    byte[] Original, DesktopIdentity Target, string InstalledHash, string Stage, bool IndependentTarget = false);
+
+internal sealed record DesktopLoginSnapshot(int QuotaOrbSnapshotVersion, byte[] Login, bool PendingEnrollment);
 
 // Separate from accounts.db: ordinary account export and software backup cannot include OAuth snapshots.
 public sealed class DesktopLoginVault
@@ -19,12 +21,45 @@ public sealed class DesktopLoginVault
     private string Entry(string id) => Guid.TryParseExact(id, "N", out _) ? Path.Combine(root, id + ".bin") : throw new InvalidDataException("账号标识无效。");
     public bool Has(string id) => File.Exists(Entry(id));
     public bool HasPending => File.Exists(Path.Combine(root, "pending.bin"));
-    public void Save(string id, byte[] bytes) { DesktopLogin.Inspect(bytes); Write(Entry(id), bytes, "account/" + id); }
-    public byte[] Load(string id)
+    public void Save(string id, byte[] bytes, bool pendingEnrollment = false)
+    {
+        DesktopLogin.Inspect(bytes);
+        var serialized = JsonSerializer.SerializeToUtf8Bytes(new DesktopLoginSnapshot(2, bytes, pendingEnrollment));
+        try { Write(Entry(id), serialized, "account/" + id); }
+        finally { CryptographicOperations.ZeroMemory(serialized); }
+    }
+    public byte[] Load(string id) => LoadSnapshot(id).Login;
+    internal DesktopLoginSnapshot LoadSnapshot(string id)
     {
         var bytes = Read(Entry(id), "account/" + id);
-        try { DesktopLogin.Inspect(bytes); return bytes; }
-        catch { CryptographicOperations.ZeroMemory(bytes); throw; }
+        byte[]? login = null;
+        try
+        {
+            using var document = JsonDocument.Parse(bytes);
+            if (!document.RootElement.TryGetProperty("QuotaOrbSnapshotVersion", out _))
+            {
+                DesktopLogin.Inspect(bytes);
+                var legacy = new DesktopLoginSnapshot(2, bytes, false); bytes = []; return legacy;
+            }
+            var snapshot = JsonSerializer.Deserialize<DesktopLoginSnapshot>(bytes);
+            login = snapshot?.Login;
+            if (snapshot is null || snapshot.QuotaOrbSnapshotVersion != 2 || login is null)
+                throw new InvalidDataException("桌面登录缓存格式不支持，请重新授权。");
+            DesktopLogin.Inspect(login);
+            login = null;
+            return snapshot;
+        }
+        finally { CryptographicOperations.ZeroMemory(bytes); if (login is not null) CryptographicOperations.ZeroMemory(login); }
+    }
+    internal void SaveOutgoing(string id, byte[] bytes)
+    {
+        if (Has(id))
+        {
+            var saved = LoadSnapshot(id);
+            try { if (saved.PendingEnrollment) return; }
+            finally { CryptographicOperations.ZeroMemory(saved.Login); }
+        }
+        Save(id, bytes);
     }
     public void Remove(string id) { if (HasPending) throw new IOException("请先处理未完成的切换。"); var p = Entry(id); SwitchFiles.CheckPath(p); File.Delete(p); }
     public void SavePending(SwitchJournal journal)

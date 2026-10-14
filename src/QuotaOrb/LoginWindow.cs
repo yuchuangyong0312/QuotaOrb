@@ -15,6 +15,7 @@ public sealed class LoginWindow : Window
     private bool closeAfterCancel;
     private LoginMethod? nextMethod;
     private LoginMethod currentMethod;
+    private readonly bool desktopLogin;
     internal TextBlock StatusText { get; } = new() { TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Foreground = UiTheme.Muted, Margin = new Thickness(0,20,0,0) };
     internal Button CancelButton { get; } = new() { Content = "取消授权" };
     internal Button DeviceButton { get; } = new() { Content = "改用设备码授权", Margin = new Thickness(0,0,12,0) };
@@ -28,11 +29,11 @@ public sealed class LoginWindow : Window
 
     // Injected in native smoke checks: no real account, browser or authorization is used.
     internal LoginWindow(AccountRecord account,
-        Func<LoginMethod, Action<LoginPrompt>, CancellationToken, Task<LoginResult>> login, Action<Uri> openBrowser)
+        Func<LoginMethod, Action<LoginPrompt>, CancellationToken, Task<LoginResult>> login, Action<Uri> openBrowser, bool desktopLogin = false)
     {
-        this.login = login; this.openBrowser = openBrowser;
+        this.login = login; this.openBrowser = openBrowser; this.desktopLogin = desktopLogin;
         UiTheme.Apply(this);
-        Title = "官方登录授权"; Width = 460; SizeToContent = SizeToContent.Height;
+        Title = desktopLogin ? "授权切换登录" : "官方登录授权"; Width = 460; SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.CanMinimize; ShowInTaskbar = true; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var content = new StackPanel { Margin = new Thickness(24) }; Content = content;
         content.Children.Add(new TextBlock { Text = $"连接【{account.Name}】", FontSize = 20, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
@@ -101,8 +102,8 @@ public sealed class LoginWindow : Window
     {
         prompt = value; Code.Text = value.UserCode ?? "";
         codePanel.Visibility = value.Method == LoginMethod.DeviceCode ? Visibility.Visible : Visibility.Collapsed;
-        StatusText.Text = value.Method == LoginMethod.Browser ? "正在等待网页授权，完成后会自动查询额度。"
-            : "请在官方网页输入下方设备码，完成后会自动查询额度。";
+        var completion = desktopLogin ? "完成后会核验并保存切换登录。" : "完成后会自动查询额度。";
+        StatusText.Text = (value.Method == LoginMethod.Browser ? "正在等待网页授权，" : "请在官方网页输入下方设备码，") + completion;
         DeviceButton.IsEnabled = true; OpenPage();
     }
 

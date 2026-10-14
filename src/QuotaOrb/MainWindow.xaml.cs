@@ -89,6 +89,7 @@ public partial class MainWindow : Window
             : saved ? "已保存桌面登录 · 切换前会核验" : "尚未保存桌面登录";
         DesktopSwitchMessage.Text = app.DesktopSwitchError ?? desktop?.Message ?? "界面测试模式不会读取或改动真实 Codex 登录。";
         SaveDesktopButton.IsEnabled = a is not null && desktop is not null && !pending && !Service.Busy;
+        AuthorizeDesktopButton.IsEnabled = loginWindow is not null || (a is not null && desktop is not null && !pending && !Service.Busy);
         SwitchDesktopButton.IsEnabled = saved && !pending && !Service.Busy && a!.Enabled;
         DesktopRecoveryActions.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
         RestoreDesktopButton.IsEnabled = KeepDesktopButton.IsEnabled = !Service.Busy;
@@ -138,6 +139,21 @@ public partial class MainWindow : Window
         finally { RenderDetails(); }
     }
     private async void SaveDesktop_Click(object sender, RoutedEventArgs e) => await DesktopAction((desktop, account, token) => desktop.SaveCurrentAsync(account, token));
+    private void AuthorizeDesktop_Click(object sender, RoutedEventArgs e)
+    {
+        if (loginWindow is not null) { loginWindow.WindowState = WindowState.Normal; loginWindow.Activate(); return; }
+        if (Selected is not { } account || app.DesktopSwitch is not { } desktop || Service.Busy) return;
+        ShowLoginWindow(new LoginWindow(account, async (method, present, token) =>
+        {
+            LoginResult? result = null;
+            await Service.RunDesktopOperationAsync(account, async shutdown =>
+            {
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, shutdown);
+                result = await desktop.AuthorizeAsync(account, method, present, linked.Token);
+            });
+            return result!;
+        }, uri => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }), desktopLogin: true));
+    }
     private async void SwitchDesktop_Click(object sender, RoutedEventArgs e) => await DesktopAction((desktop, account, token) => desktop.SwitchAsync(account, Service.Data.Accounts, Service.Data.Settings.LimitId, token));
     private async void RestoreDesktop_Click(object sender, RoutedEventArgs e)
     {

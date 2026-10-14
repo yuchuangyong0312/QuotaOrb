@@ -21,17 +21,50 @@ public sealed class DesktopSwitcher
     private readonly IDesktopRuntime runtime;
     private readonly IDesktopLoginProbe probe;
     private readonly DesktopAuthFile auth;
+    private readonly DesktopLoginEnrollment? enrollment;
     private readonly SemaphoreSlim gate = new(1, 1);
     public bool HasPending => vault.HasPending;
-    public string Message { get; private set; } = "每个账号先在 Codex 登录一次，再保存桌面登录。切换前请从 Codex 托盘退出。";
+    public string Message { get; private set; } = "首次使用请点击“授权切换登录”，为各账号分别授权。切换前从 Codex 托盘退出程序，无需点击账号菜单中的“退出登录”。";
     public event Action? Changed;
 
-    public DesktopSwitcher(string dataRoot, IDesktopRuntime runtime, IDesktopLoginProbe probe)
+    public DesktopSwitcher(string dataRoot, IDesktopRuntime runtime, IDesktopLoginProbe probe, DesktopLoginEnrollment? enrollment = null)
     {
-        vault = new(dataRoot); this.runtime = runtime; this.probe = probe; auth = new(runtime.Home);
+        vault = new(dataRoot); this.runtime = runtime; this.probe = probe; this.enrollment = enrollment; auth = new(runtime.Home);
     }
 
     public bool HasSaved(AccountRecord account) => vault.Has(account.Id);
+
+    public async Task<LoginResult> AuthorizeAsync(AccountRecord account, LoginMethod method, Action<LoginPrompt> present, CancellationToken token)
+    {
+        if (!await gate.WaitAsync(0, token)) throw new InvalidOperationException("已有切换或授权操作正在进行。");
+        byte[]? bytes = null;
+        try
+        {
+            RequireNoPending();
+            if (enrollment is null) throw new InvalidOperationException("桌面授权组件不可用。");
+            if (string.IsNullOrWhiteSpace(account.Email)) throw new InvalidOperationException("请先填写此账号的登录邮箱。");
+            await runtime.ValidateAsync(token);
+            SetMessage($"正在为「{account.Name}」授权切换登录…");
+            bytes = await enrollment.AcquireAsync(account, method, present, token);
+            DesktopLogin.MatchAccount(DesktopLogin.Inspect(bytes), account);
+            token.ThrowIfCancellationRequested();
+            vault.Save(account.Id, bytes, pendingEnrollment: true);
+            SetMessage($"已保存「{account.Name}」的切换登录。使用时从 Codex 托盘退出程序，再点击“切换并打开 Codex”。");
+            return new(true, false, Message);
+        }
+        catch (Exception error)
+        {
+            SetMessage(error switch
+            {
+                OperationCanceledException => "授权已取消或超时，原有切换登录未替换。",
+                CodexRpcException rpc => rpc.Message + " 原有切换登录未替换。",
+                InvalidDataException or InvalidOperationException => error.Message,
+                _ => "切换登录未保存，请检查网络及本地存储后重试。"
+            });
+            return new(false, error is OperationCanceledException && token.IsCancellationRequested, Message);
+        }
+        finally { Clear(bytes); gate.Release(); }
+    }
 
     public async Task SaveCurrentAsync(AccountRecord account, CancellationToken token)
     {
@@ -50,7 +83,7 @@ public sealed class DesktopSwitcher
             finally { CryptographicOperations.ZeroMemory(again); }
             token.ThrowIfCancellationRequested();
             vault.Save(account.Id, bytes);
-            SetMessage($"已保存「{account.Name}」的桌面登录，切换时会重新核验。");
+            SetMessage($"已保存「{account.Name}」的桌面登录。请勿在 Codex 中点击“退出登录”，否则此登录可能失效；添加其他账号请用“授权切换登录”。");
         }
         finally { Clear(bytes); gate.Release(); }
     }
@@ -67,21 +100,24 @@ public sealed class DesktopSwitcher
             runtime.RequireStopped();
             await runtime.ValidateAsync(token);
             runtime.RequireStopped();
-            replacement = vault.Load(target.Id);
+            var saved = vault.LoadSnapshot(target.Id);
+            replacement = saved.Login;
             var identity = DesktopLogin.Inspect(replacement);
             DesktopLogin.MatchAccount(identity, target);
             original = auth.Read();
             var outgoing = DesktopLogin.Inspect(original);
             var previous = accounts.Where(a => MatchesRecord(outgoing, a)).ToArray();
             // Save rotated tokens every time an account is left, never restore the original stale snapshot.
-            foreach (var account in previous) vault.Save(account.Id, original);
-            if (outgoing.Matches(identity))
+            // A newly authorized independent login takes precedence over an older desktop
+            // session for that same account, until it has actually been installed/launched.
+            foreach (var account in previous) vault.SaveOutgoing(account.Id, original);
+            if (outgoing.Matches(identity) && !saved.PendingEnrollment)
             {
                 Clear(replacement); replacement = original.ToArray();
                 vault.Save(target.Id, original);
             }
             token.ThrowIfCancellationRequested();
-            journal = new(1, runtime.Home, target.Id, original, identity, DesktopLogin.Fingerprint(replacement), "prepared");
+            journal = new(1, runtime.Home, target.Id, original, identity, DesktopLogin.Fingerprint(replacement), "prepared", saved.PendingEnrollment);
             vault.SavePending(journal);
             runtime.RequireStopped();
             auth.Replace(replacement, DesktopLogin.Fingerprint(original));
@@ -97,7 +133,7 @@ public sealed class DesktopSwitcher
             try
             {
                 if (!DesktopLogin.Inspect(refreshed).Matches(identity)) throw new InvalidDataException("核验后账号发生变化，已停止启动。");
-                vault.Save(target.Id, refreshed);
+                vault.Save(target.Id, refreshed, journal.IndependentTarget);
                 journal = journal with { Stage = "verified", InstalledHash = DesktopLogin.Fingerprint(refreshed) };
                 vault.SavePending(journal);
             }
@@ -134,7 +170,10 @@ public sealed class DesktopSwitcher
             var reason = error switch
             {
                 OperationCanceledException => "操作已取消或核验超时。",
-                CodexRpcException => "目标登录未通过官方核验，请检查网络或在 Codex 重新登录并保存。",
+                CodexRpcException { LoginInvalidated: true } => "此账号保存的登录已被官方作废，请点击“授权切换登录”重新授权。退出登录可能使已保存的登录失效。",
+                CodexRpcException { RequiresLogin: true } => "此账号的登录需要重新授权，请点击“授权切换登录”。",
+                CodexRpcException { Throttled: true } => "官方核验请求过于频繁，请稍后重试。",
+                CodexRpcException => "官方核验暂未成功，请检查网络后重试；这不代表账号登录已失效。",
                 InvalidDataException or InvalidOperationException => error.Message,
                 IOException => "登录文件无法读写，请检查目录权限或重新保存桌面登录。",
                 _ => "切换未完成。"
@@ -204,8 +243,8 @@ public sealed class DesktopSwitcher
             if (!DesktopLogin.Inspect(current).Matches(journal.Target))
                 throw new InvalidDataException("当前登录不是此次切换目标，未覆盖新的登录。");
             // Preserve even a rotated target token if the switch later needs to roll back.
-            vault.Save(journal.AccountRecordId, current);
-            if (DesktopLogin.Inspect(journal.Original).Matches(journal.Target)) { vault.Complete(); return; }
+            vault.Save(journal.AccountRecordId, current, journal.IndependentTarget);
+            if (!journal.IndependentTarget && DesktopLogin.Inspect(journal.Original).Matches(journal.Target)) { vault.Complete(); return; }
             runtime.RequireStopped();
             auth.Replace(journal.Original, DesktopLogin.Fingerprint(current));
             vault.Complete();

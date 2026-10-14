@@ -160,6 +160,157 @@ foreach (var restriction in new[] { "spend-control", "individual", "reached-type
     Directory.CreateDirectory(Path.Combine(f.Runtime.Home, "secrets")); File.WriteAllText(Path.Combine(f.Runtime.Home, "secrets", "codex_auth.age"), "synthetic");
     Check("mixed encrypted storage is refused without migration", await Reject(() => { file.Read(); return Task.CompletedTask; }));
 }
+foreach (var method in new[] { LoginMethod.Browser, LoginMethod.DeviceCode })
+{
+    var f = New(); f.Runtime.Running = true;
+    FakeEnrollmentSession? session = null;
+    var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => session = new(home, "b") { RotateOnDispose = true });
+    var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    LoginPrompt? shown = null;
+    var result = await switcher.AuthorizeAsync(f.B, method, prompt => shown = prompt, default);
+    Check("enrollment works while desktop is running: " + method, result.Success && shown?.Method == method && f.Runtime.Launches == 0 && f.Probe.Calls == 0);
+    Check("enrollment never changes active desktop credentials: " + method, f.Current().SequenceEqual(f.Original) && !f.Vault.HasPending);
+    Check("enrollment captures the final token after helper disposal: " + method, f.Vault.Load(f.B.Id).SequenceEqual(Fixture.Login("b", "enrolled-renewed")));
+    Check("enrollment never logs out any session: " + method, session!.Requests.All(x => x != "account/logout"));
+    Check("enrollment removes its plaintext temporary profile: " + method, !Directory.EnumerateFileSystemEntries(Path.Combine(f.Root, "data", "desktop-enrollment")).Any() && session.Disposed);
+    var cache = File.ReadAllBytes(Path.Combine(f.Root, "data", "desktop-logins", f.B.Id + ".bin"));
+    Check("new enrollment is encrypted in the existing per-account vault: " + method, !Encoding.UTF8.GetString(cache).Contains("SYNTHETIC_REFRESH"));
+}
+{
+    var f = New(); var originalB = f.Vault.Load(f.B.Id);
+    FakeEnrollmentSession? session = null;
+    var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => session = new(home, "a"));
+    var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    var result = await switcher.AuthorizeAsync(f.B, LoginMethod.Browser, _ => { }, default);
+    Check("wrong browser account cannot replace a saved desktop login", !result.Success && result.Message.Contains("不一致") && f.Vault.Load(f.B.Id).SequenceEqual(originalB) && f.Current().SequenceEqual(f.Original));
+    Check("wrong-account failure disposes the helper before clearing its profile", session!.Disposed && !Directory.Exists(session.Home));
+}
+{
+    var f = New(); var originalB = f.Vault.Load(f.B.Id);
+    FakeEnrollmentSession? session = null;
+    var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => session = new(home, "b") { HoldCompletion = true });
+    var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    using var cancel = new CancellationTokenSource();
+    var result = await switcher.AuthorizeAsync(f.B, LoginMethod.Browser, _ => cancel.Cancel(), cancel.Token);
+    Check("cancelled enrollment preserves all prior logins", result.Cancelled && !result.Success && f.Vault.Load(f.B.Id).SequenceEqual(originalB) && f.Current().SequenceEqual(f.Original));
+    Check("cancelled enrollment cancels only its own attempt then cleans files", session!.Requests.Contains("account/login/cancel") && !session.Requests.Contains("account/logout") && session.Disposed && !Directory.Exists(session.Home));
+}
+foreach (var failure in new[] { "network", "server-account", "empty-quota", "final-identity" })
+{
+    var f = New(); var originalB = f.Vault.Load(f.B.Id);
+    FakeEnrollmentSession? session = null;
+    var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => session = new(home, "b") { Failure = failure });
+    var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    var result = await switcher.AuthorizeAsync(f.B, LoginMethod.Browser, _ => { }, default);
+    Check("failed enrollment preserves existing logins: " + failure, !result.Success && f.Vault.Load(f.B.Id).SequenceEqual(originalB) && f.Current().SequenceEqual(f.Original));
+    Check("failed enrollment sanitizes errors and clears files: " + failure, !result.Message.Contains("SYNTHETIC_SECRET") && session!.Disposed && !Directory.Exists(session.Home));
+}
+{
+    var f = New(); var savedHomes = new List<string>(); var name = "a";
+    var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => { savedHomes.Add(home); return new FakeEnrollmentSession(home, name); });
+    var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    var a = await switcher.AuthorizeAsync(f.A, LoginMethod.Browser, _ => { }, default);
+    name = "b";
+    var b = await switcher.AuthorizeAsync(f.B, LoginMethod.Browser, _ => { }, default);
+    Check("enrolling a second account preserves the first independent login", a.Success && b.Success && f.Vault.Load(f.A.Id).SequenceEqual(Fixture.Login("a", "enrolled")) && f.Vault.Load(f.B.Id).SequenceEqual(Fixture.Login("b", "enrolled")));
+    Check("each enrollment has a fresh home distinct from the desktop", savedHomes.Distinct().Count() == 2 && savedHomes.All(home => home != f.Runtime.Home && !Directory.Exists(home)) && f.Current().SequenceEqual(f.Original));
+}
+{
+    var f = New(); var started = new TaskCompletionSource();
+    var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => new FakeEnrollmentSession(home, "b") { HoldCompletion = true });
+    var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    using var cancel = new CancellationTokenSource();
+    var attempt = switcher.AuthorizeAsync(f.B, LoginMethod.Browser, _ => started.SetResult(), cancel.Token);
+    await started.Task;
+    Check("enrollment cannot overlap a switch or save", await Reject(() => switcher.SwitchAsync(f.B, [f.A, f.B], "codex", default)) && await Reject(() => switcher.SaveCurrentAsync(f.A, default)));
+    Check("a second enrollment is rejected while one is waiting", await Reject(() => switcher.AuthorizeAsync(f.A, LoginMethod.Browser, _ => { }, default)));
+    cancel.Cancel(); await attempt;
+}
+{
+    var f = New(); var data = Path.Combine(f.Root, "data"); var temporaryRoot = Path.Combine(data, "desktop-enrollment");
+    var stale = Path.Combine(temporaryRoot, Guid.NewGuid().ToString("N")); Directory.CreateDirectory(stale);
+    File.WriteAllBytes(Path.Combine(stale, "auth.json"), Fixture.Login("b"));
+    var unrelated = Path.Combine(temporaryRoot, "unrecognized"); Directory.CreateDirectory(unrelated); File.WriteAllText(Path.Combine(unrelated, "keep.txt"), "keep");
+    _ = new DesktopLoginEnrollment(data, _ => throw new Exception("No session should start"));
+    Check("restart cleans an abandoned enrollment without touching unknown folders", !Directory.Exists(stale) && File.ReadAllText(Path.Combine(unrelated, "keep.txt")) == "keep");
+}
+foreach (var message in new[] { "refresh_token_invalidated", "refresh_token_reused", "Your authentication token has been revoked" })
+{
+    var f = New(); var rpc = new CodexRpcException(-32000, message + " SYNTHETIC_SECRET_BACKEND_PAYLOAD");
+    f.Probe.Action = (_, _, _) => throw rpc;
+    Check("invalidated sessions are distinguished from network failure: " + message, await Reject(() => f.Switch()) && rpc.LoginInvalidated && rpc.RequiresLogin && f.Switcher.Message.Contains("官方作废") && f.Current().SequenceEqual(f.Original) && !f.Switcher.Message.Contains("SYNTHETIC_SECRET"));
+}
+{
+    var f = New(); var originalB = f.Vault.Load(f.B.Id); FileStream? locked = null;
+    var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => new FakeEnrollmentSession(home, "b")
+    { OnDispose = () => locked = new FileStream(Path.Combine(home, "auth.json"), FileMode.Open, FileAccess.Read, FileShare.Read) });
+    var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    try
+    {
+        var result = await switcher.AuthorizeAsync(f.B, LoginMethod.Browser, _ => { }, default);
+        Check("cleanup failure does not commit credentials or report success", !result.Success && f.Vault.Load(f.B.Id).SequenceEqual(originalB) && f.Current().SequenceEqual(f.Original));
+    }
+    finally { locked?.Dispose(); }
+    _ = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), _ => throw new Exception("No session should start"));
+    Check("a failed cleanup is retried on restart", !Directory.EnumerateDirectories(Path.Combine(f.Root, "data", "desktop-enrollment")).Any());
+}
+{
+    var f = New(); var rpc = new CodexRpcException(-32000, "error sending request: SYNTHETIC_SECRET_BACKEND_PAYLOAD");
+    f.Probe.Action = (_, _, _) => throw rpc;
+    Check("network failure does not claim the login was invalidated", await Reject(() => f.Switch()) && !rpc.LoginInvalidated && !rpc.RequiresLogin && f.Switcher.Message.Contains("不代表账号登录已失效") && f.Current().SequenceEqual(f.Original));
+}
+{
+    var f = New(); var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => new FakeEnrollmentSession(home, "a"));
+    var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    var result = await switcher.AuthorizeAsync(f.A, LoginMethod.Browser, _ => { }, default);
+    var saved = f.Vault.LoadSnapshot(f.A.Id);
+    Check("fresh authorization persists an independent-session marker", result.Success && saved.PendingEnrollment);
+    CryptographicOperations.ZeroMemory(saved.Login);
+    f.Probe.Action = (_, _, _) =>
+    {
+        if (!f.Current().SequenceEqual(Fixture.Login("a", "enrolled"))) throw new Exception("Old desktop login overwrote fresh authorization");
+        f.Write(Fixture.Login("a", "refreshed-enrollment")); return Task.FromResult(Fixture.Quota("a"));
+    };
+    // A restarted service must still use the new enrollment, not the old desktop snapshot.
+    var restarted = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe);
+    await restarted.SwitchAsync(f.A, [f.A, f.B], "codex", default);
+    Check("same-account switch uses freshly authorized credentials after restart", f.Runtime.Launches == 1 && f.Current().SequenceEqual(Fixture.Login("a", "refreshed-enrollment")));
+    saved = f.Vault.LoadSnapshot(f.A.Id);
+    Check("successful launch hands token tracking back to desktop", !saved.PendingEnrollment && saved.Login.SequenceEqual(f.Current()));
+    CryptographicOperations.ZeroMemory(saved.Login);
+}
+{
+    var f = New(); var data = Path.Combine(f.Root, "data");
+    var enrollment = new DesktopLoginEnrollment(data, home => new FakeEnrollmentSession(home, "a"));
+    var switcher = new DesktopSwitcher(data, f.Runtime, f.Probe, enrollment);
+    await switcher.AuthorizeAsync(f.A, LoginMethod.Browser, _ => { }, default);
+    await switcher.SwitchAsync(f.B, [f.A, f.B], "codex", default);
+    var saved = f.Vault.LoadSnapshot(f.A.Id);
+    Check("leaving an old desktop session cannot overwrite its pending new authorization", saved.PendingEnrollment && saved.Login.SequenceEqual(Fixture.Login("a", "enrolled")));
+    CryptographicOperations.ZeroMemory(saved.Login);
+    f.Runtime.Running = false;
+    f.Probe.Action = (_, _, _) => Task.FromResult(Fixture.Quota("a"));
+    await switcher.SwitchAsync(f.A, [f.A, f.B], "codex", default);
+    Check("returning to an independently authorized account uses its new login", f.Current().SequenceEqual(Fixture.Login("a", "enrolled")));
+}
+{
+    var f = New(); var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => new FakeEnrollmentSession(home, "a"));
+    var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    await switcher.AuthorizeAsync(f.A, LoginMethod.Browser, _ => { }, default);
+    f.Probe.Action = (_, _, _) => { f.Write(Fixture.Login("a", "new-session-rotated")); throw new CodexRpcException(-32000, "network failure"); };
+    Check("independent same-account failure restores the original session", await Reject(() => switcher.SwitchAsync(f.A, [f.A, f.B], "codex", default)) && f.Current().SequenceEqual(f.Original) && !f.Vault.HasPending);
+    var saved = f.Vault.LoadSnapshot(f.A.Id);
+    Check("rollback retains the new independent token for a later retry", saved.PendingEnrollment && saved.Login.SequenceEqual(Fixture.Login("a", "new-session-rotated")));
+    CryptographicOperations.ZeroMemory(saved.Login);
+}
+{
+    var f = New(); var legacy = Fixture.Login("b", "legacy");
+    var encrypted = ProtectedData.Protect(legacy, Encoding.UTF8.GetBytes("QuotaOrb/desktop-login/v1/account/" + f.B.Id), DataProtectionScope.CurrentUser);
+    File.WriteAllBytes(Path.Combine(f.Root, "data", "desktop-logins", f.B.Id + ".bin"), encrypted);
+    var saved = f.Vault.LoadSnapshot(f.B.Id);
+    Check("previous preview login cache remains readable", !saved.PendingEnrollment && saved.Login.SequenceEqual(legacy));
+    CryptographicOperations.ZeroMemory(saved.Login);
+}
 File.WriteAllText(Path.Combine(root, "result.json"), JsonSerializer.Serialize(new { success = true, checks }));
 Console.WriteLine($"{checks.Count} desktop switch checks passed. Synthetic test output: {root}");
 
@@ -208,4 +359,46 @@ sealed class FakeProbe : IDesktopLoginProbe
     public int Calls { get; private set; }
     public Func<string, DesktopIdentity, CancellationToken, Task<QuotaSnapshot>> Action { get; set; } = (_, _, _) => Task.FromResult(Fixture.Quota("b"));
     public Task<QuotaSnapshot> VerifyAsync(string home, DesktopIdentity expected, CancellationToken token) { Calls++; return Action(home, expected, token); }
+}
+
+sealed class FakeEnrollmentSession(string home, string name) : IDesktopEnrollmentSession
+{
+    public string Home => home;
+    public List<string> Requests { get; } = [];
+    public bool Disposed { get; private set; }
+    public bool RotateOnDispose { get; init; }
+    public bool HoldCompletion { get; init; }
+    public string? Failure { get; init; }
+    public Action? OnDispose { get; init; }
+    public Task Completion { get; } = new TaskCompletionSource().Task;
+    public event Action<string, JsonElement>? Notification;
+    public Task InitializeAsync(CancellationToken token)
+    {
+        if (File.Exists(Path.Combine(home, "auth.json"))) throw new Exception("Enrollment reused a login file");
+        return Task.CompletedTask;
+    }
+    public Task<JsonElement> RequestAsync(string method, object? parameters, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested(); Requests.Add(method);
+        switch (method)
+        {
+            case "account/login/start":
+                File.WriteAllBytes(Path.Combine(home, "auth.json"), Fixture.Login(name, "enrolled"));
+                if (!HoldCompletion) Notification?.Invoke("account/login/completed", JsonSerializer.SerializeToElement(new { loginId = "synthetic-id", success = true }));
+                return Task.FromResult(JsonSerializer.SerializeToElement(new { loginId = "synthetic-id", authUrl = "https://auth.openai.com/authorize", verificationUrl = "https://auth.openai.com/codex/device", userCode = "TEST-0000" }));
+            case "account/login/cancel": return Task.FromResult(JsonSerializer.SerializeToElement(new { }));
+            case "account/read": return Task.FromResult(JsonSerializer.SerializeToElement(new { account = new { type = "chatgpt", email = name + "@example.invalid" } }));
+            case "account/rateLimits/read":
+                if (Failure == "network") throw new CodexRpcException(-32000, "error sending request: SYNTHETIC_SECRET_BACKEND_PAYLOAD");
+                if (Failure == "empty-quota") return Task.FromResult(JsonSerializer.SerializeToElement(new { accountId = "account-" + name }));
+                return Task.FromResult(JsonSerializer.SerializeToElement(new { accountId = Failure == "server-account" ? "account-other" : "account-" + name, rateLimits = new { limitId = "codex", primary = new { usedPercent = 25, windowDurationMins = 300, resetsAt = DateTimeOffset.UtcNow.AddHours(5).ToUnixTimeSeconds() } } }));
+            default: throw new Exception("Unexpected method: " + method);
+        }
+    }
+    public ValueTask DisposeAsync()
+    {
+        if (RotateOnDispose) File.WriteAllBytes(Path.Combine(home, "auth.json"), Fixture.Login(name, "enrolled-renewed"));
+        if (Failure == "final-identity") File.WriteAllBytes(Path.Combine(home, "auth.json"), Fixture.Login("c", "enrolled"));
+        Disposed = true; OnDispose?.Invoke(); return ValueTask.CompletedTask;
+    }
 }

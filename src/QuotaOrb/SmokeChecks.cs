@@ -38,7 +38,7 @@ internal static class SmokeChecks
             window.Render();window.UpdateLayout();
             Check("native five-account list",window.AccountsGrid.Items.Count==5);
             Check("UI smoke never opens the real desktop login cache",app.DesktopSwitch is null&&!Directory.Exists(Path.Combine(root,"desktop-logins")));
-            Check("desktop switch requires a saved login and live adapter",!window.SaveDesktopButton.IsEnabled&&!window.SwitchDesktopButton.IsEnabled&&window.DesktopRecoveryActions.Visibility==Visibility.Collapsed);
+            Check("desktop switch requires a saved login and live adapter",!window.SaveDesktopButton.IsEnabled&&!window.AuthorizeDesktopButton.IsEnabled&&!window.SwitchDesktopButton.IsEnabled&&window.DesktopRecoveryActions.Visibility==Visibility.Collapsed);
             Check("only dashboard exists, no floating window",app.Windows.Count==1&&window.ShowInTaskbar);
             Check("window icon is embedded",window.Icon is not null);
             var arguments = Environment.GetCommandLineArgs();
@@ -91,6 +91,14 @@ internal static class SmokeChecks
             var component=app.Service.ComponentPath;
             Check("installed Codex is discovered",component is not null && File.Exists(component));
             Check("application has no bundled Codex runtime",!Directory.Exists(Path.Combine(AppContext.BaseDirectory,"runtime")));
+            {
+                var enrollmentHome = Path.Combine(root, "enrollment-component");
+                SwitchFiles.PrivateDirectory(enrollmentHome);
+                await using var client = CodexClient.ForDesktopEnrollment(component!, enrollmentHome);
+                await client.InitializeAsync(CancellationToken.None);
+                var identity = await client.RequestAsync("account/read", new { refreshToken = false }, CancellationToken.None);
+                Check("installed helper accepts isolated desktop enrollment without loading the live login",QuotaParser.Get(identity,"account") is null or { ValueKind: JsonValueKind.Null });
+            }
             {
                 await using var client=new CodexClient(component!,app.Store.ProfilePath(Guid.NewGuid().ToString("N")));
                 await client.InitializeAsync(CancellationToken.None);
@@ -187,6 +195,21 @@ internal static class SmokeChecks
         dialog.CancelButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await Task.Delay(100);
         check("explicit cancel ends authorization and closes the window",token.IsCancellationRequested&&!dialog.IsAuthorizing&&!dialog.IsVisible);
+        var desktopDialog = new LoginWindow(fixture, async (method, present, cancellation) =>
+        {
+            present(new(method, new Uri("https://auth.openai.com/codex/device"), null, DateTimeOffset.UtcNow.AddMinutes(15)));
+            await Task.Delay(Timeout.Infinite, cancellation);
+            return new(false, true, "Cancelled");
+        }, _ => { }, desktopLogin: true);
+        window.ShowLoginWindow(desktopDialog);
+        await Task.Delay(100); desktopDialog.UpdateLayout();
+        check("desktop enrollment uses a distinct modeless authorization window",desktopDialog.Title=="授权切换登录"&&desktopDialog.StatusText.Text.Contains("保存切换登录")&&NativeWindowEnabled(new System.Windows.Interop.WindowInteropHelper(window).Handle));
+        window.AuthorizeDesktopButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check("desktop enrollment progress reopens without starting another attempt",desktopDialog.IsAuthorizing&&desktopDialog.IsVisible);
+        Capture(desktopDialog,Path.Combine(root,"login-desktop.png"));
+        desktopDialog.CancelButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Task.Delay(100);
+        check("desktop enrollment explicit cancel closes only its own window",!desktopDialog.IsVisible&&window.IsVisible);
     }
     [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint="IsWindowEnabled")]
     [return:System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]

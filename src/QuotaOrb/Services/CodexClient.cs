@@ -10,18 +10,23 @@ public sealed class CodexRpcException : Exception
     public int Code { get; }
     public bool RequiresLogin { get; }
     public bool Throttled { get; }
+    public bool LoginInvalidated { get; }
     public CodexRpcException(int code, string message) : base(SafeMessage(message))
     {
         Code = code;
-        RequiresLogin = message.Contains("401", StringComparison.OrdinalIgnoreCase) || message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase) || message.Contains("not logged", StringComparison.OrdinalIgnoreCase) || message.Contains("sign in", StringComparison.OrdinalIgnoreCase) || message.Contains("refresh token", StringComparison.OrdinalIgnoreCase);
+        LoginInvalidated = IsInvalidated(message);
+        RequiresLogin = LoginInvalidated || message.Contains("401", StringComparison.OrdinalIgnoreCase) || message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase) || message.Contains("not logged", StringComparison.OrdinalIgnoreCase) || message.Contains("sign in", StringComparison.OrdinalIgnoreCase) || message.Contains("refresh token", StringComparison.OrdinalIgnoreCase);
         Throttled = message.Contains("429", StringComparison.OrdinalIgnoreCase) || message.Contains("too many requests", StringComparison.OrdinalIgnoreCase);
     }
-    private static string SafeMessage(string value) => value.Contains("keyring", StringComparison.OrdinalIgnoreCase) || value.Contains("credential store", StringComparison.OrdinalIgnoreCase)
+    private static bool IsInvalidated(string value) => new[] { "refresh_token_invalidated", "refresh_token_reused", "refresh_token_expired", "token has been invalidated", "token has already been used", "session has been revoked", "token has been revoked" }
+        .Any(marker => value.Contains(marker, StringComparison.OrdinalIgnoreCase));
+    private static string SafeMessage(string value) => IsInvalidated(value) ? "保存的登录已失效，需要重新授权。"
+        : value.Contains("keyring", StringComparison.OrdinalIgnoreCase) || value.Contains("credential store", StringComparison.OrdinalIgnoreCase)
         ? "Windows 凭据存储不可用，已停止授权；不会改为明文保存。"
         : "官方查询未成功。请检查网络或重新登录授权。";
 }
 
-public sealed class CodexClient : IAsyncDisposable, ILoginConnection
+public sealed class CodexClient : IAsyncDisposable, ILoginConnection, IDesktopEnrollmentSession
 {
     private readonly Process process;
     private readonly ChildProcessJob job;
@@ -38,6 +43,9 @@ public sealed class CodexClient : IAsyncDisposable, ILoginConnection
 
     // Used only by the desktop switch transaction while every Codex process is stopped.
     internal static CodexClient ForDesktopVerification(string executable, string home) => new(executable, home, true);
+
+    // The caller owns a fresh private profile. Never enroll in the live desktop home.
+    internal static CodexClient ForDesktopEnrollment(string executable, string home) => new(executable, home, true);
 
     private CodexClient(string executable, string profile, bool desktopVerification)
     {
