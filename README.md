@@ -53,12 +53,12 @@ Windows 桌面 Codex 多账号额度助手。**2.0.0 · MIT 开源 · Windows 10
 
 ## 从源码构建
 
-需要 Windows x64 和 .NET 10 SDK，在仓库目录运行 PowerShell：
+需要 Windows x64 和 `global.json` 指定的 .NET SDK 10.0.401，在仓库目录运行 PowerShell：
 
 ```powershell
 dotnet run --project src/QuotaOrb.Tests -c Release
 dotnet run --project src/QuotaOrb.ServiceTests -c Release
-dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contained true -o dist/QuotaOrb-2.0.0
+dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -o dist/QuotaOrb-2.0.0
 ```
 
 也可运行 `scripts/bootstrap.ps1` 下载并校验官方 SDK 到项目 `.tools`，再运行 `scripts/publish.ps1` 生成包含安装脚本、许可证和校验文件的内部发布目录。
