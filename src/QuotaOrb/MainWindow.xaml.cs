@@ -88,7 +88,6 @@ public partial class MainWindow : Window
         DesktopLoginStatus.Text = pending ? "上次切换尚未完成。退出 Codex 后，可以恢复上次登录；若已自行重新登录，可选择保留当前登录。"
             : saved ? "已保存桌面登录 · 切换前会核验" : "尚未保存桌面登录";
         DesktopSwitchMessage.Text = app.DesktopSwitchError ?? desktop?.Message ?? "界面测试模式不会读取或改动真实 Codex 登录。";
-        SaveDesktopButton.IsEnabled = a is not null && desktop is not null && !pending && !Service.Busy;
         AuthorizeDesktopButton.IsEnabled = loginWindow is not null || (a is not null && desktop is not null && !pending && !Service.Busy);
         SwitchDesktopButton.IsEnabled = saved && !pending && !Service.Busy && a!.Enabled;
         DesktopRecoveryActions.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
@@ -138,7 +137,6 @@ public partial class MainWindow : Window
         }
         finally { RenderDetails(); }
     }
-    private async void SaveDesktop_Click(object sender, RoutedEventArgs e) => await DesktopAction((desktop, account, token) => desktop.SaveCurrentAsync(account, token));
     private void AuthorizeDesktop_Click(object sender, RoutedEventArgs e)
     {
         if (loginWindow is not null) { loginWindow.WindowState = WindowState.Normal; loginWindow.Activate(); return; }

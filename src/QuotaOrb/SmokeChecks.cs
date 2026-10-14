@@ -38,7 +38,7 @@ internal static class SmokeChecks
             window.Render();window.UpdateLayout();
             Check("native five-account list",window.AccountsGrid.Items.Count==5);
             Check("UI smoke never opens the real desktop login cache",app.DesktopSwitch is null&&!Directory.Exists(Path.Combine(root,"desktop-logins")));
-            Check("desktop switch requires a saved login and live adapter",!window.SaveDesktopButton.IsEnabled&&!window.AuthorizeDesktopButton.IsEnabled&&!window.SwitchDesktopButton.IsEnabled&&window.DesktopRecoveryActions.Visibility==Visibility.Collapsed);
+            Check("desktop switch requires a saved login and live adapter",!window.AuthorizeDesktopButton.IsEnabled&&!window.SwitchDesktopButton.IsEnabled&&window.DesktopRecoveryActions.Visibility==Visibility.Collapsed);
             Check("only dashboard exists, no floating window",app.Windows.Count==1&&window.ShowInTaskbar);
             Check("window icon is embedded",window.Icon is not null);
             var arguments = Environment.GetCommandLineArgs();

@@ -89,8 +89,6 @@
                 <Button x:Name="AuthorizeDesktopButton" Content="授权切换登录" Click="AuthorizeDesktop_Click" Padding="10,8"/>
                 <Button x:Name="SwitchDesktopButton" Content="切换并打开 Codex" Click="SwitchDesktop_Click" Padding="10,8" Margin="0"/>
               </WrapPanel>
-              <Button x:Name="SaveDesktopButton" Content="保存当前桌面登录" Click="SaveDesktop_Click" Padding="10,6" Margin="0,10,0,0" HorizontalAlignment="Left"
-                      ToolTip="仅保存当前 Codex 登录；给其他账号添加登录请使用上方“授权切换登录”。"/>
               <WrapPanel x:Name="DesktopRecoveryActions" Margin="0,10,0,0" Visibility="Collapsed">
                 <Button x:Name="RestoreDesktopButton" Content="恢复上次登录" Click="RestoreDesktop_Click"/>
                 <Button x:Name="KeepDesktopButton" Content="保留当前登录" Click="KeepDesktop_Click" Margin="0"/>
