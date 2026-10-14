@@ -20,5 +20,7 @@ jobs:
         run: dotnet run --project src/QuotaOrb.Tests -c Release
       - name: Storage and authorization checks with synthetic data
         run: dotnet run --project src/QuotaOrb.ServiceTests -c Release
+      - name: Desktop switching and recovery checks with synthetic data
+        run: dotnet run --project src/QuotaOrb.DesktopSwitchTests -c Release
       - name: Build Windows executable
         run: dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -o dist/QuotaOrb

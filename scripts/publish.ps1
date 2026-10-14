@@ -4,7 +4,7 @@ $sdkExe = Join-Path $projectRoot '.tools\dotnet\dotnet.exe'
 & (Join-Path $PSScriptRoot 'bootstrap.ps1')
 $version = ([xml](Get-Content -LiteralPath (Join-Path $projectRoot 'src\QuotaOrb\QuotaOrb.csproj') -Raw)).Project.PropertyGroup.Version
 $destination = Join-Path $projectRoot ('dist\QuotaOrb-'+$version)
-& $sdkExe publish (Join-Path $projectRoot 'src\QuotaOrb\QuotaOrb.csproj') -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -o $destination
+& $sdkExe publish (Join-Path $projectRoot 'src\QuotaOrb\QuotaOrb.csproj') -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -p:IncludeSourceRevisionInInformationalVersion=false -o $destination
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
 if (Test-Path -LiteralPath (Join-Path $destination 'runtime')) { throw 'Use a clean release directory; Codex runtime files must not be bundled.' }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination (Join-Path $destination '使用说明.md') -Force

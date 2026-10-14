@@ -83,6 +83,19 @@
             <WrapPanel Margin="0,0,0,16"><Button x:Name="LoginButton" Content="登录授权" Click="Login_Click"/><Button x:Name="VerifyButton" Content="立即核验" Click="Verify_Click" Margin="0"/></WrapPanel>
             <TextBlock x:Name="DetailError" Foreground="#F3AE96" TextWrapping="Wrap" Margin="0,0,0,12"/>
             <Border Style="{StaticResource DetailCard}"><StackPanel>
+              <TextBlock Text="Codex 账号切换 · 测试版" FontWeight="SemiBold"/>
+              <TextBlock x:Name="DesktopLoginStatus" TextWrapping="Wrap" Foreground="{StaticResource Subtle}" Margin="0,10,0,10"/>
+              <WrapPanel>
+                <Button x:Name="SaveDesktopButton" Content="保存当前桌面登录" Click="SaveDesktop_Click" Padding="10,8"/>
+                <Button x:Name="SwitchDesktopButton" Content="切换并打开 Codex" Click="SwitchDesktop_Click" Padding="10,8" Margin="0"/>
+              </WrapPanel>
+              <WrapPanel x:Name="DesktopRecoveryActions" Margin="0,10,0,0" Visibility="Collapsed">
+                <Button x:Name="RestoreDesktopButton" Content="恢复上次登录" Click="RestoreDesktop_Click"/>
+                <Button x:Name="KeepDesktopButton" Content="保留当前登录" Click="KeepDesktop_Click" Margin="0"/>
+              </WrapPanel>
+              <TextBlock x:Name="DesktopSwitchMessage" TextWrapping="Wrap" Foreground="{StaticResource Subtle}" Margin="0,8,0,0"/>
+            </StackPanel></Border>
+            <Border Style="{StaticResource DetailCard}"><StackPanel>
               <TextBlock Text="账号登录信息" FontWeight="SemiBold"/>
               <TextBlock x:Name="RechargeDetail" TextWrapping="Wrap" LineHeight="23" Margin="0,14,0,8"/>
               <Grid>

@@ -55,6 +55,12 @@ public sealed class AccountService : IDisposable
     }
     private bool BeginOperation() => !shutdown.IsCancellationRequested && operation.Wait(0);
     private void EndOperation() { BusyAccountId = null; operation.Release(); Changed?.Invoke(); }
+    public async Task RunDesktopOperationAsync(AccountRecord? account, Func<CancellationToken, Task> action)
+    {
+        if ((account is not null && !Data.Accounts.Contains(account)) || !BeginOperation()) throw new InvalidOperationException("请等当前查询或授权结束。");
+        try { BusyAccountId = account?.Id; Changed?.Invoke(); await action(shutdown.Token); }
+        finally { EndOperation(); }
+    }
     private void Commit(Action apply, Action undo)
     {
         if (!BeginOperation()) throw new InvalidOperationException("请等当前查询或授权结束，信息尚未保存。");

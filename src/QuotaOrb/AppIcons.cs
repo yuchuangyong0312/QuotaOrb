@@ -17,9 +17,11 @@ internal static class AppIcons
     public static Icon LoadTrayIcon()
     {
         object? shell = null;
+        string? installedIcon = null;
         try
         {
             var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            var installedExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Programs","QuotaOrb","QuotaOrb.exe");
             var shellType = Type.GetTypeFromProgID("WScript.Shell");
             if (shellType is null) return LoadEmbedded();
             shell = Activator.CreateInstance(shellType);
@@ -30,13 +32,13 @@ internal static class AppIcons
                 {
                     shortcut = ((dynamic)shell!).CreateShortcut(path);
                     var target = (string)((dynamic)shortcut).TargetPath;
-                    if (!string.Equals(Path.GetFullPath(target),Environment.ProcessPath,StringComparison.OrdinalIgnoreCase)) continue;
                     var location = (string)((dynamic)shortcut).IconLocation;
-                    if (string.IsNullOrWhiteSpace(location)) return LoadEmbedded();
-                    var comma = location.LastIndexOf(',');
-                    var index = comma>=0 && int.TryParse(location[(comma+1)..],out var number)?number:0;
-                    var file = Environment.ExpandEnvironmentVariables((comma>=0?location[..comma]:location).Trim('"'));
-                    return LoadFromFile(file,index) ?? LoadEmbedded();
+                    if (string.Equals(Path.GetFullPath(target),Environment.ProcessPath,StringComparison.OrdinalIgnoreCase))
+                        return FromShortcutIcon(location) ?? LoadEmbedded();
+                    // A separately stored preview should honor the existing QuotaOrb icon
+                    // without retargeting or replacing the user's stable desktop shortcut.
+                    if (Path.GetFileName(path)=="额度管理.lnk" && string.Equals(Path.GetFullPath(target),installedExe,StringComparison.OrdinalIgnoreCase))
+                        installedIcon = location;
                 }
                 catch { }
                 finally { if (shortcut is not null && Marshal.IsComObject(shortcut)) Marshal.FinalReleaseComObject(shortcut); }
@@ -44,7 +46,17 @@ internal static class AppIcons
         }
         catch { }
         finally { if (shell is not null && Marshal.IsComObject(shell)) Marshal.FinalReleaseComObject(shell); }
-        return LoadEmbedded();
+        try { return FromShortcutIcon(installedIcon) ?? LoadEmbedded(); }
+        catch { return LoadEmbedded(); }
+    }
+
+    private static Icon? FromShortcutIcon(string? location)
+    {
+        if (string.IsNullOrWhiteSpace(location)) return null;
+        var comma = location.LastIndexOf(',');
+        var index = comma>=0 && int.TryParse(location[(comma+1)..],out var number)?number:0;
+        var file = Environment.ExpandEnvironmentVariables((comma>=0?location[..comma]:location).Trim('"'));
+        return LoadFromFile(file,index);
     }
 
     public static Icon? LoadFromFile(string file,int index,int size = 16)

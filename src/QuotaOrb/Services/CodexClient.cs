@@ -34,12 +34,18 @@ public sealed class CodexClient : IAsyncDisposable, ILoginConnection
     public Task Completion => reader;
     public event Action<string, JsonElement>? Notification;
 
-    public CodexClient(string executable, string profile)
+    public CodexClient(string executable, string profile) : this(executable, profile, false) { }
+
+    // Used only by the desktop switch transaction while every Codex process is stopped.
+    internal static CodexClient ForDesktopVerification(string executable, string home) => new(executable, home, true);
+
+    private CodexClient(string executable, string profile, bool desktopVerification)
     {
         if (!File.Exists(executable)) throw new FileNotFoundException(CodexInstallation.MissingMessage, executable);
-        Directory.CreateDirectory(profile);
-        // This directory is exclusively owned by QuotaOrb; never use the user's default Codex home.
-        File.WriteAllText(Path.Combine(profile, "config.toml"), "cli_auth_credentials_store = \"keyring\"\n[analytics]\nenabled = false\n", new UTF8Encoding(false));
+        if (desktopVerification) { if (!Directory.Exists(profile)) throw new DirectoryNotFoundException("Codex 登录目录不存在。"); }
+        else Directory.CreateDirectory(profile);
+        // Only ordinary quota profiles belong to QuotaOrb; desktop verification must preserve user config.
+        if (!desktopVerification) File.WriteAllText(Path.Combine(profile, "config.toml"), "cli_auth_credentials_store = \"keyring\"\n[analytics]\nenabled = false\n", new UTF8Encoding(false));
         var start = new ProcessStartInfo(executable)
         {
             WorkingDirectory = profile, UseShellExecute = false, CreateNoWindow = true,
@@ -47,6 +53,11 @@ public sealed class CodexClient : IAsyncDisposable, ILoginConnection
             StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
         };
         start.ArgumentList.Add("app-server"); start.ArgumentList.Add("--listen"); start.ArgumentList.Add("stdio://");
+        if (desktopVerification)
+        {
+            start.ArgumentList.Add("-c"); start.ArgumentList.Add("cli_auth_credentials_store=\"file\"");
+            start.ArgumentList.Add("-c"); start.ArgumentList.Add("analytics.enabled=false");
+        }
         start.Environment["CODEX_HOME"] = profile;
         foreach (var key in new[] { "OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_IDENTITY_TOKEN_FILE", "OPENAI_IDENTITY_PROVIDER_ID" }) start.Environment.Remove(key);
         process = new Process { StartInfo = start, EnableRaisingEvents = true };

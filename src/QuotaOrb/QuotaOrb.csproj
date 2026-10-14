@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable><ImplicitUsings>disable</ImplicitUsings><AssemblyName>QuotaOrb</AssemblyName><RootNamespace>QuotaOrb</RootNamespace>
-    <Version>2.0.0</Version><RuntimeIdentifier>win-x64</RuntimeIdentifier><SelfContained>true</SelfContained>
+    <Version>2.1.0-preview.1</Version><RuntimeIdentifier>win-x64</RuntimeIdentifier><SelfContained>true</SelfContained>
     <DebugType>none</DebugType><DebugSymbols>false</DebugSymbols>
     <PublishSingleFile>true</PublishSingleFile><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile><RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
@@ -11,8 +11,6 @@
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="..\QuotaOrb.Core\QuotaOrb.Core.csproj"/><PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12"/></ItemGroup>
   <ItemGroup>
-    <!-- Local experiments are not included in the published source or executable. -->
-    <Compile Remove="Services\DesktopSwitch\**\*.cs"/>
     <Resource Include="Assets\QuotaOrb.ico"/>
     <EmbeddedResource Include="..\..\THIRD-PARTY-NOTICES.md" LogicalName="QuotaOrb.Licenses.NOTICES"/>
     <EmbeddedResource Include="..\..\LICENSE" LogicalName="QuotaOrb.Licenses.QuotaOrb-MIT"/>

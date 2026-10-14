@@ -34,6 +34,32 @@ var missing = new CodexInstallation([], () => null);
 try
 {
     await LoginFlowChecks.RunAsync(Check);
+    using (var store = new LocalStore(Path.Combine(root, "DesktopOperation")))
+    using (var service = new AccountService(store, installation))
+    {
+        CodexClient.Reset(); var a = Make(); service.AddAccount(a);
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var switching = service.RunDesktopOperationAsync(a, _ => hold.Task);
+        await service.RefreshAllAsync(true); await service.RefreshAsync(a);
+        var loginBlocked = false; var deleteBlocked = false; var duplicateBlocked = false; var editBlocked = false;
+        try { await service.LoginAsync(a, CancellationToken.None); } catch (InvalidOperationException) { loginBlocked = true; }
+        try { await service.RemoveAsync(a); } catch (InvalidOperationException) { deleteBlocked = true; }
+        try { await service.RunDesktopOperationAsync(a, _ => Task.CompletedTask); } catch (InvalidOperationException) { duplicateBlocked = true; }
+        try { service.UpdateAccount(LocalStore.CopyAccount(a)); } catch (InvalidOperationException) { editBlocked = true; }
+        Check("desktop switch shares exclusivity with polling, login, edits and deletion", service.Busy && service.BusyAccountId == a.Id && CodexClient.Queries.Count == 0 && CodexClient.Logouts == 0 && loginBlocked && deleteBlocked && duplicateBlocked && editBlocked);
+        hold.SetResult(); await switching;
+        var failed = false;
+        try { await service.RunDesktopOperationAsync(a, _ => throw new IOException("Synthetic switch fault")); } catch (IOException) { failed = true; }
+        await service.RefreshAsync(a);
+        Check("a failed desktop operation releases the query gate", failed && !service.Busy && CodexClient.Queries.GetValueOrDefault(a.Id) == 1);
+        service.Data.Accounts.Clear(); var recovered = false;
+        await service.RunDesktopOperationAsync(null, _ => { recovered = true; return Task.CompletedTask; });
+        Check("desktop recovery remains available without account rows", recovered && !service.Busy);
+        var waiting = service.RunDesktopOperationAsync(null, cancellation => Task.Delay(Timeout.Infinite, cancellation));
+        service.Dispose(); var cancelled = false;
+        try { await waiting; } catch (OperationCanceledException) { cancelled = true; }
+        Check("tool shutdown cancels its desktop operation and releases the gate", cancelled && !service.Busy);
+    }
     using (var store = new LocalStore(Path.Combine(root, "Batch")))
     using (var service = new AccountService(store, installation))
     {

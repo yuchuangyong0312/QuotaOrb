@@ -37,13 +37,15 @@ internal static class SmokeChecks
             await Task.Delay(300);
             window.Render();window.UpdateLayout();
             Check("native five-account list",window.AccountsGrid.Items.Count==5);
+            Check("UI smoke never opens the real desktop login cache",app.DesktopSwitch is null&&!Directory.Exists(Path.Combine(root,"desktop-logins")));
+            Check("desktop switch requires a saved login and live adapter",!window.SaveDesktopButton.IsEnabled&&!window.SwitchDesktopButton.IsEnabled&&window.DesktopRecoveryActions.Visibility==Visibility.Collapsed);
             Check("only dashboard exists, no floating window",app.Windows.Count==1&&window.ShowInTaskbar);
             Check("window icon is embedded",window.Icon is not null);
             var arguments = Environment.GetCommandLineArgs();
             var expectedIconIndex = Array.IndexOf(arguments,"--expected-icon");
             using (var expected = expectedIconIndex>=0 && expectedIconIndex+2<arguments.Length
                 ? AppIcons.LoadFromFile(arguments[expectedIconIndex+1],int.Parse(arguments[expectedIconIndex+2]))!
-                : AppIcons.LoadEmbedded())
+                : AppIcons.LoadTrayIcon())
             using (var expectedBitmap = expected.ToBitmap())
             using (var trayBitmap = app.TrayIcon!.ToBitmap())
                 Check("tray matches the desktop or packaged icon",Enumerable.Range(0,16).All(x=>Enumerable.Range(0,16).All(y=>expectedBitmap.GetPixel(x,y)==trayBitmap.GetPixel(x,y))));

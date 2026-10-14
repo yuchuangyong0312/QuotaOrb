@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Interop;
 using System.Runtime.InteropServices;
+using System.Reflection;
 using QuotaOrb.Services;
 
 namespace QuotaOrb;
@@ -20,6 +21,8 @@ public partial class MainWindow : Window
     public MainWindow(App app)
     {
         this.app = app; InitializeComponent(); UiTheme.Apply(this);
+        if (typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Contains("-preview",StringComparison.Ordinal) == true)
+            Title += " · 账号切换测试版";
         Closing += (_, e) => { if (!app.Exiting) { e.Cancel = true; Hide(); } };
         SourceInitialized += (_, _) =>
         {
@@ -78,7 +81,17 @@ public partial class MainWindow : Window
     private void RenderDetails()
     {
         var a = Selected;
-        DetailPanel.IsEnabled = a is not null;
+        var desktop = app.DesktopSwitch;
+        var pending = desktop?.HasPending == true;
+        DetailPanel.IsEnabled = a is not null || pending;
+        var saved = a is not null && desktop?.HasSaved(a) == true;
+        DesktopLoginStatus.Text = pending ? "上次切换尚未完成。退出 Codex 后，可以恢复上次登录；若已自行重新登录，可选择保留当前登录。"
+            : saved ? "已保存桌面登录 · 切换前会核验" : "尚未保存桌面登录";
+        DesktopSwitchMessage.Text = app.DesktopSwitchError ?? desktop?.Message ?? "界面测试模式不会读取或改动真实 Codex 登录。";
+        SaveDesktopButton.IsEnabled = a is not null && desktop is not null && !pending && !Service.Busy;
+        SwitchDesktopButton.IsEnabled = saved && !pending && !Service.Busy && a!.Enabled;
+        DesktopRecoveryActions.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
+        RestoreDesktopButton.IsEnabled = KeepDesktopButton.IsEnabled = !Service.Busy;
         SetLoginField(EmailDisplay, CopyEmailButton, a?.Email);
         SetSecretField(PasswordDisplay, CopyPasswordButton, () => SecretVault.Reveal(a?.ProtectedPassword));
         SetSecretField(TwoFactorUrlDisplay, CopyTwoFactorUrlButton, () => SecretVault.RevealTwoFactorUrl(a?.ProtectedTwoFactorUrl));
@@ -113,6 +126,32 @@ public partial class MainWindow : Window
     {
         if (sender is Button { Tag: TextBox field } && field.Tag is string value)
             SafeClipboard.Copy(value, field != EmailDisplay);
+    }
+    private async Task DesktopAction(Func<DesktopSwitcher, AccountRecord, CancellationToken, Task> action)
+    {
+        if (Selected is not { } account || app.DesktopSwitch is not { } desktop || Service.Busy) return;
+        try { await Service.RunDesktopOperationAsync(account, token => action(desktop, account, token)); }
+        catch (Exception error)
+        {
+            Inform(error is InvalidOperationException or InvalidDataException ? error.Message : "操作未完成，请检查登录存储与目录权限后重试。");
+        }
+        finally { RenderDetails(); }
+    }
+    private async void SaveDesktop_Click(object sender, RoutedEventArgs e) => await DesktopAction((desktop, account, token) => desktop.SaveCurrentAsync(account, token));
+    private async void SwitchDesktop_Click(object sender, RoutedEventArgs e) => await DesktopAction((desktop, account, token) => desktop.SwitchAsync(account, Service.Data.Accounts, Service.Data.Settings.LimitId, token));
+    private async void RestoreDesktop_Click(object sender, RoutedEventArgs e)
+    {
+        if (app.DesktopSwitch is not { } desktop || Service.Busy) return;
+        try { await Service.RunDesktopOperationAsync(Selected, desktop.RestoreAsync); }
+        catch (Exception error) { Inform(error is InvalidOperationException or InvalidDataException ? error.Message : "恢复尚未完成，原恢复记录已保留。"); }
+        finally { RenderDetails(); }
+    }
+    private async void KeepDesktop_Click(object sender, RoutedEventArgs e)
+    {
+        if (app.DesktopSwitch is not { } desktop || Service.Busy) return;
+        try { await Service.RunDesktopOperationAsync(Selected, token => desktop.KeepCurrentAsync(Service.Data.Accounts, token)); }
+        catch (Exception error) { Inform(error is InvalidOperationException or InvalidDataException ? error.Message : "操作尚未完成，原恢复记录已保留。"); }
+        finally { RenderDetails(); }
     }
     private void Account_Selected(object sender, SelectionChangedEventArgs e) { if (rendering) return; selectedId = (AccountsGrid.SelectedItem as AccountRow)?.Record.Id; RenderDetails(); }
     private void Add_Click(object sender, RoutedEventArgs e)
@@ -152,8 +191,16 @@ public partial class MainWindow : Window
     private async void Delete_Click(object sender, RoutedEventArgs e)
     {
         if (Selected is not { } a || Service.Busy) return;
+        if (app.DesktopSwitch?.HasPending == true) { Inform("请先恢复未完成的桌面切换，再删除账号。"); return; }
         if (MessageBox.Show(this, $"删除「{a.Name}」的本地信息、密码与历史，并注销此工具保存的授权？", "删除账号", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        try { await Service.RemoveAsync(a); selectedId = null; Render(); } catch (Exception ex) { Inform(ex.Message); }
+        try
+        {
+            // A failed deletion may require saving this local cache again, but it must
+            // never leave orphaned desktop credentials after deleting an account row.
+            app.DesktopSwitch?.RemoveSaved(a);
+            await Service.RemoveAsync(a); selectedId = null; Render();
+        }
+        catch (Exception ex) { Inform(ex.Message); }
     }
     private IntPtr HandleHotkey(IntPtr hwnd,int message,IntPtr wParam,IntPtr lParam,ref bool handled)
     {

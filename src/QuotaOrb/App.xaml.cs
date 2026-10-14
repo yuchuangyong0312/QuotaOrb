@@ -12,6 +12,8 @@ public partial class App : Application
 {
     public LocalStore Store { get; private set; } = null!;
     public AccountService Service { get; private set; } = null!;
+    public DesktopSwitcher? DesktopSwitch { get; private set; }
+    public string? DesktopSwitchError { get; private set; }
     public bool Exiting { get; private set; }
     private MainWindow? dashboard;
     private Forms.NotifyIcon? tray;
@@ -52,6 +54,15 @@ public partial class App : Application
         {
             Store = new LocalStore(root);
             Service = new AccountService(Store,new CodexInstallation());
+            if (!smoke)
+            {
+                try
+                {
+                    DesktopSwitch = new DesktopSwitcher(root, new WindowsDesktopRuntime(new CodexInstallation()), new DesktopLoginProbe(new CodexInstallation()));
+                    DesktopSwitch.Changed += () => Dispatcher.InvokeAsync(UpdateViews);
+                }
+                catch { DesktopSwitchError = "桌面登录缓存无法打开，查询额度仍可使用。请检查本地数据目录权限。"; }
+            }
             if (smoke) SmokeChecks.Seed(Service);
             Service.Changed += UpdateViews;
             Service.Notice += ShowNotice;
