@@ -19,7 +19,7 @@ public sealed class WindowsDesktopRuntime : IDesktopRuntime
         {
             var custom = Environment.GetEnvironmentVariable("CODEX_HOME", scope);
             if (!string.IsNullOrWhiteSpace(custom) && !string.Equals(Path.GetFullPath(custom), Home, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("当前 Codex 使用自定义登录目录，此测试版暂不支持切换。");
+                throw new InvalidOperationException("当前 Codex 使用自定义登录目录，暂不支持切换。");
         }
         var windowsPowerShell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
         var info = new ProcessStartInfo(windowsPowerShell) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8 };

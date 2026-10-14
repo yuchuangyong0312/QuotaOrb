@@ -68,7 +68,7 @@ public sealed class DesktopAuthFile
         SwitchFiles.CheckPath(Home);
         // Refuse mixed/new encrypted storage rather than guessing credential precedence.
         if (File.Exists(Path.Combine(Home, "secrets", "codex_auth.age")))
-            throw new IOException("此 Codex 使用加密登录存储，当前测试版暂不支持切换。");
+            throw new IOException("此 Codex 使用加密登录存储，暂不支持切换。");
         var config = Path.Combine(Home, "config.toml");
         if (File.Exists(config))
         {
