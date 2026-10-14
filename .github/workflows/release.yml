@@ -1,0 +1,40 @@
+name: Prepare draft Windows release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Check quota behavior
+        run: dotnet run --project src/QuotaOrb.Tests -c Release
+      - name: Check storage and authorization
+        run: dotnet run --project src/QuotaOrb.ServiceTests -c Release
+      - name: Build Windows executable
+        run: dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -p:IncludeSourceRevisionInInformationalVersion=false -o dist/QuotaOrb
+      - name: Upload to the existing draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = ([xml](Get-Content src/QuotaOrb/QuotaOrb.csproj -Raw)).Project.PropertyGroup.Version
+          $tag = 'v' + $version
+          $release = gh release view $tag --json isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $release.isDraft) { throw 'Expected an existing draft release.' }
+          $exe = 'dist/QuotaOrb/QuotaOrb.exe'
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $PWD 'dist/QuotaOrb/SHA256SUMS.txt'), "$hash  QuotaOrb.exe`n", [Text.UTF8Encoding]::new($false))
+          gh release upload $tag $exe dist/QuotaOrb/SHA256SUMS.txt --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed.' }
+          Write-Output "Uploaded draft executable SHA-256: $hash"
