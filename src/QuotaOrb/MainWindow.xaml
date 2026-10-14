@@ -1,0 +1,111 @@
+<Window x:Class="QuotaOrb.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:QuotaOrb"
+        Title="额度管理 — Codex 账号额度" Style="{StaticResource AppWindowStyle}" Width="1240" Height="820" MinWidth="980" MinHeight="640" WindowStartupLocation="CenterScreen">
+  <Window.Resources><local:AccountCardWidthConverter x:Key="CardWidth"/></Window.Resources>
+  <Grid>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition/></Grid.ColumnDefinitions>
+    <Border Background="#1C1E24" BorderBrush="#343741" BorderThickness="0,0,1,0">
+      <DockPanel Margin="12,20">
+        <Image DockPanel.Dock="Top" Source="pack://application:,,,/Assets/QuotaOrb.ico" Width="30" Height="30" Margin="0,2,0,28"/>
+        <Button DockPanel.Dock="Bottom" Content="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="18" ToolTip="设置" AutomationProperties.Name="设置" Click="Settings_Click" Style="{StaticResource QuietButton}" Margin="0" Padding="12"/>
+        <StackPanel>
+          <Border Background="#354357" CornerRadius="10" Padding="12" ToolTip="账号额度"><TextBlock Text="&#xE716;" FontFamily="Segoe MDL2 Assets" FontSize="19" Foreground="{StaticResource Accent}" HorizontalAlignment="Center"/></Border>
+          <TextBlock Text="账号" Foreground="{StaticResource Subtle}" FontSize="11" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <Grid Grid.Column="1" Margin="24,24,24,20">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+      <Grid Margin="0,0,0,24">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Text="Codex 账号额度" FontSize="23" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <Border Background="#363A44" CornerRadius="11" Padding="9,3" Margin="12,0,0,0" VerticalAlignment="Center"><TextBlock x:Name="AccountCount" Foreground="{StaticResource Subtle}" FontSize="12"/></Border>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+          <Button x:Name="RefreshAllButton" Content="全部核验" Click="RefreshAll_Click" Padding="16,10"/>
+          <Button Content="＋ 添加账号" Click="Add_Click" Style="{StaticResource PrimaryButton}" Margin="0" Padding="16,10"/>
+        </StackPanel>
+      </Grid>
+      <Grid Grid.Row="1">
+        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="18"/><ColumnDefinition Width="340"/></Grid.ColumnDefinitions>
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+          <Border x:Name="StoragePanel" Visibility="Collapsed" Background="#49372F" CornerRadius="10" Padding="12" Margin="0,0,10,12"><StackPanel><TextBlock x:Name="StorageMessage" Foreground="#FFD0AA" TextWrapping="Wrap"/><Button x:Name="RetrySaveButton" Content="重试保存" Click="RetrySave_Click" HorizontalAlignment="Left" Margin="0,8,0,0"/></StackPanel></Border>
+          <ListBox Grid.Row="1" x:Name="AccountsGrid" SelectionChanged="Account_Selected" Background="Transparent" BorderThickness="0" Foreground="{StaticResource Ink}" Padding="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="False" AutomationProperties.Name="账号额度列表">
+            <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ListBox.ItemsPanel>
+            <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem">
+              <Setter Property="Width"><Setter.Value><Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=ScrollContentPresenter}" Converter="{StaticResource CardWidth}"/></Setter.Value></Setter>
+              <Setter Property="Margin" Value="0,0,10,12"/><Setter Property="Padding" Value="13"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Background" Value="{StaticResource Surface}"/><Setter Property="BorderBrush" Value="{StaticResource Line}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="Cursor" Value="Hand"/>
+              <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="card" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="card" Property="Background" Value="#343842"/></Trigger>
+                  <Trigger Property="IsSelected" Value="True"><Setter TargetName="card" Property="Background" Value="#303B4A"/><Setter TargetName="card" Property="BorderBrush" Value="{StaticResource Accent}"/></Trigger>
+                  <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="card" Property="BorderBrush" Value="#C7DFFF"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate></Setter.Value></Setter>
+            </Style></ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate><DataTemplate>
+              <StackPanel>
+                <DockPanel><Border DockPanel.Dock="Right" Background="#414653" CornerRadius="5" Padding="6,2" Margin="6,0,0,0"><TextBlock Text="{Binding Plan}" Foreground="#CDD4E0" FontSize="10" FontWeight="SemiBold"/></Border><TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/></DockPanel>
+                <TextBlock Text="{Binding Email}" FontSize="11" Foreground="{StaticResource Subtle}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Email}" Margin="0,5,0,12"/>
+                <Grid Opacity="{Binding SnapshotOpacity}"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                  <StackPanel Orientation="Horizontal">
+                    <local:QuotaRing Remaining="{Binding ShortRemaining}" Width="65" Height="65" Margin="0,0,9,0"/>
+                    <StackPanel VerticalAlignment="Center"><TextBlock Text="5 小时" FontSize="12"/><TextBlock Text="剩余额度" FontSize="12" Foreground="{StaticResource Subtle}" Margin="0,3,0,0"/></StackPanel>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <local:QuotaRing Remaining="{Binding WeekRemaining}" Width="65" Height="65" Margin="0,0,9,0"/>
+                    <StackPanel VerticalAlignment="Center"><TextBlock Text="每周" FontSize="12"/><TextBlock Text="剩余额度" FontSize="12" Foreground="{StaticResource Subtle}" Margin="0,3,0,0"/></StackPanel>
+                  </StackPanel>
+                </Grid>
+                <Grid Margin="0,8,0,10"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                  <TextBlock Text="{Binding ShortReset}" Foreground="{StaticResource Subtle}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding ShortReset}"/>
+                  <TextBlock Grid.Column="1" Text="{Binding WeekReset}" Foreground="{StaticResource Subtle}" FontSize="12" TextAlignment="Right" TextTrimming="CharacterEllipsis" ToolTip="{Binding WeekReset}"/>
+                </Grid>
+                <Border BorderBrush="#454A55" BorderThickness="0,1,0,0" Padding="0,9,0,0"><Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <TextBlock Text="{Binding Status}" Foreground="{Binding StatusBrush}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding Status}"/>
+                  <TextBlock Grid.Column="1" Text="{Binding Credits}" Foreground="{StaticResource Subtle}" FontSize="12" Margin="8,0,0,0"/>
+                </Grid></Border>
+                <TextBlock Text="{Binding Synced, StringFormat=上次同步  {0}}" Foreground="{StaticResource Subtle}" FontSize="12" Margin="0,5,0,0"/>
+              </StackPanel>
+            </DataTemplate></ListBox.ItemTemplate>
+          </ListBox>
+          <StackPanel x:Name="EmptyState" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="350" IsHitTestVisible="False">
+            <TextBlock Text="&#xE716;" FontFamily="Segoe MDL2 Assets" Foreground="#697D99" FontSize="38" HorizontalAlignment="Center" Margin="0,0,0,22"/>
+            <TextBlock x:Name="EmptyLabel" TextAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource Subtle}" LineHeight="24"/>
+          </StackPanel>
+        </Grid>
+        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,8,0">
+          <StackPanel x:Name="DetailPanel">
+            <TextBlock Text="账号详情" Foreground="{StaticResource Subtle}" FontSize="11" Margin="0,1,0,12"/>
+            <TextBlock x:Name="DetailName" FontSize="20" FontWeight="SemiBold" Text="选择一个账号" TextWrapping="Wrap"/>
+            <TextBlock x:Name="DetailEmail" Foreground="{StaticResource Subtle}" Margin="0,7,0,16" TextWrapping="Wrap" FontSize="12"/>
+            <WrapPanel Margin="0,0,0,16"><Button x:Name="LoginButton" Content="登录授权" Click="Login_Click"/><Button x:Name="VerifyButton" Content="立即核验" Click="Verify_Click" Margin="0"/></WrapPanel>
+            <TextBlock x:Name="DetailError" Foreground="#F3AE96" TextWrapping="Wrap" Margin="0,0,0,12"/>
+            <Border Style="{StaticResource DetailCard}"><StackPanel>
+              <TextBlock Text="账号登录信息" FontWeight="SemiBold"/>
+              <TextBlock x:Name="RechargeDetail" TextWrapping="Wrap" LineHeight="23" Margin="0,14,0,8"/>
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="66"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <TextBlock Text="登录邮箱" Foreground="{StaticResource Subtle}" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox x:Name="EmailDisplay" Grid.Column="1" Text="无" IsReadOnly="True" TextWrapping="Wrap" Padding="7,6" Margin="0,6" AutomationProperties.Name="登录邮箱"/>
+                <Button x:Name="CopyEmailButton" Grid.Column="2" Content="复制" Click="CopyLoginField_Click" Tag="{Binding ElementName=EmailDisplay}" Padding="7,6" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Text="登录密码" Foreground="{StaticResource Subtle}" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox x:Name="PasswordDisplay" Grid.Row="1" Grid.Column="1" Text="无" IsReadOnly="True" TextWrapping="Wrap" Padding="7,6" Margin="0,6" AutomationProperties.Name="登录密码"/>
+                <Button x:Name="CopyPasswordButton" Grid.Row="1" Grid.Column="2" Content="复制" Click="CopyLoginField_Click" Tag="{Binding ElementName=PasswordDisplay}" Padding="7,6" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="2" Text="2FA 网址" Foreground="{StaticResource Subtle}" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox x:Name="TwoFactorUrlDisplay" Grid.Row="2" Grid.Column="1" Text="无" IsReadOnly="True" TextWrapping="Wrap" Padding="7,6" Margin="0,6" AutomationProperties.Name="2FA 网址"/>
+                <Button x:Name="CopyTwoFactorUrlButton" Grid.Row="2" Grid.Column="2" Content="复制" Click="CopyLoginField_Click" Tag="{Binding ElementName=TwoFactorUrlDisplay}" Padding="7,6" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="3" Text="2FA 密钥" Foreground="{StaticResource Subtle}" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox x:Name="TwoFactorKeyDisplay" Grid.Row="3" Grid.Column="1" Text="无" IsReadOnly="True" TextWrapping="Wrap" Padding="7,6" Margin="0,6" AutomationProperties.Name="2FA 密钥"/>
+                <Button x:Name="CopyTwoFactorKeyButton" Grid.Row="3" Grid.Column="2" Content="复制" Click="CopyLoginField_Click" Tag="{Binding ElementName=TwoFactorKeyDisplay}" Padding="7,6" Margin="6,0,0,0" VerticalAlignment="Center"/>
+              </Grid>
+            </StackPanel></Border>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,2,0,12"><Button Content="编辑" Click="Edit_Click" Padding="16,8"/><Button Content="删除" Click="Delete_Click" Padding="16,8" Foreground="#F0A5A5" Margin="0"/></StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Grid>
+  </Grid>
+</Window>

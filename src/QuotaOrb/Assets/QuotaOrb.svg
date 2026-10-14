@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>QuotaOrb</title>
+  <circle cx="128" cy="128" r="118" fill="#22242b"/>
+  <circle cx="128" cy="128" r="81" fill="none" stroke="#414653" stroke-width="28"/>
+  <path d="M128 47 A81 81 0 1 1 47 128" fill="none" stroke="#2ed6c7" stroke-width="28" stroke-linecap="round"/>
+  <path d="M164 164 L204 204" fill="none" stroke="#85bbff" stroke-width="28" stroke-linecap="round"/>
+</svg>
