@@ -77,9 +77,7 @@
         </Grid>
         <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,8,0">
           <StackPanel x:Name="DetailPanel">
-            <TextBlock Text="账号详情" Foreground="{StaticResource Subtle}" FontSize="11" Margin="0,1,0,12"/>
-            <TextBlock x:Name="DetailName" FontSize="20" FontWeight="SemiBold" Text="选择一个账号" TextWrapping="Wrap"/>
-            <TextBlock x:Name="DetailEmail" Foreground="{StaticResource Subtle}" Margin="0,7,0,16" TextWrapping="Wrap" FontSize="12"/>
+            <TextBlock x:Name="DetailName" FontSize="20" FontWeight="SemiBold" Text="选择一个账号" TextWrapping="Wrap" Margin="0,0,0,16"/>
             <WrapPanel Margin="0,0,0,16"><Button x:Name="LoginButton" Content="登录授权" Click="Login_Click"/><Button x:Name="VerifyButton" Content="立即核验" Click="Verify_Click" Margin="0"/></WrapPanel>
             <TextBlock x:Name="DetailError" Foreground="#F3AE96" TextWrapping="Wrap" Margin="0,0,0,12"/>
             <Border Style="{StaticResource DetailCard}"><StackPanel>

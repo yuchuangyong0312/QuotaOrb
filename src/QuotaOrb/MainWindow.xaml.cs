@@ -98,12 +98,12 @@ public partial class MainWindow : Window
         SetSecretField(TwoFactorKeyDisplay, CopyTwoFactorKeyButton, () => SecretVault.RevealTwoFactorKey(a?.ProtectedTwoFactorKey));
         if (a is null)
         {
-            DetailName.Text = "账号详情"; DetailEmail.Text = "选中左侧账号查看";
+            DetailName.Text = "选择一个账号";
             foreach (var t in new[] { DetailError, RechargeDetail }) t.Text = "";
             DetailError.Visibility = Visibility.Collapsed;
             return;
         }
-        DetailName.Text = a.Name; DetailEmail.Text = $"{a.Email}\n套餐：{(a.Plan is "unknown" or "" ? "待授权后获取" : a.Plan)}";
+        DetailName.Text = a.Name;
         DetailError.Text = Service.ComponentAvailable ? a.LastError ?? "" : CodexInstallation.MissingMessage;
         DetailError.Visibility = string.IsNullOrEmpty(DetailError.Text) ? Visibility.Collapsed : Visibility.Visible;
         LoginButton.Content = loginWindow is not null ? "查看授权进度" : a.AuthState == "ready" ? "重新授权" : "登录授权";
