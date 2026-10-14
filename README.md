@@ -2,7 +2,7 @@
 
 Windows 桌面 Codex 多账号额度助手。**2.0.0 · MIT 开源 · Windows 10/11 x64**。
 
-当前开发分支为 **2.1.0-preview.6**，增加独立授权及桌面账号切换测试功能。稳定发布仍为 2.0.0；两个真实账号的桌面往返切换尚待人工验收，参见 [测试版使用与验收](docs/account-switch-preview.md)。
+当前开发分支为 **2.1.0-preview.7**，增加独立授权及桌面账号切换测试功能。稳定发布仍为 2.0.0；两个真实账号的桌面往返切换尚待人工验收，参见 [测试版使用与验收](docs/account-switch-preview.md)。
 
 查看账号的 5 小时和每周剩余额度、官方刷新时间与重置卡数量，在使用前判断哪些账号仍有额度。
 
@@ -61,7 +61,7 @@ Windows 桌面 Codex 多账号额度助手。**2.0.0 · MIT 开源 · Windows 10
 dotnet run --project src/QuotaOrb.Tests -c Release
 dotnet run --project src/QuotaOrb.ServiceTests -c Release
 dotnet run --project src/QuotaOrb.DesktopSwitchTests -c Release
-dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -p:IncludeSourceRevisionInInformationalVersion=false -o dist/QuotaOrb-2.1.0-preview.6
+dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -p:IncludeSourceRevisionInInformationalVersion=false -o dist/QuotaOrb-2.1.0-preview.7
 ```
 
 也可运行 `scripts/bootstrap.ps1` 下载并校验官方 SDK 到项目 `.tools`，再运行 `scripts/publish.ps1` 生成包含安装脚本、许可证和校验文件的内部发布目录。
@@ -69,7 +69,7 @@ dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contain
 原生界面检查需安装 Codex，指定**全新独立**的测试目录：
 
 ```powershell
-.\dist\QuotaOrb-2.1.0-preview.6\QuotaOrb.exe --smoke-test --skip-auth-handoff --data-root C:\Temp\QuotaOrb-Smoke-New
+.\dist\QuotaOrb-2.1.0-preview.7\QuotaOrb.exe --smoke-test --skip-auth-handoff --data-root C:\Temp\QuotaOrb-Smoke-New
 ```
 
 测试仅使用虚构账号，并生成界面截图。`--skip-auth-handoff` 避免占用真实授权回调端口；省略它会在隔离目录启动并取消一个未登录的官方授权会话，不自动打开浏览器。不要指向实际账号目录。

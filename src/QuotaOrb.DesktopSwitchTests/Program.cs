@@ -66,7 +66,7 @@ Fixture New() => new(Path.Combine(root, Guid.NewGuid().ToString("N")));
 {
     var f = New(); f.Probe.Action = (_, _, _) => throw new IOException("SYNTHETIC_SECRET_BACKEND_PAYLOAD");
     Check("verification failure restores original credentials", await Reject(() => f.Switch()) && f.Current().SequenceEqual(f.Original) && !f.Vault.HasPending && f.Runtime.Launches == 0);
-    Check("raw backend errors never enter user-visible status", !f.Switcher.Message.Contains("SYNTHETIC_SECRET"));
+    Check("raw backend errors never enter user-visible status", !f.Switcher.GetMessage(f.B).Contains("SYNTHETIC_SECRET"));
 }
 {
     var f = New(); f.Probe.Action = (_, _, _) => { f.Write(Fixture.Login("b", "renewed")); return Task.FromResult(Fixture.Quota("b", 100)); };
@@ -209,22 +209,47 @@ foreach (var failure in new[] { "network", "server-account", "empty-quota", "fin
     var f = New(); var savedHomes = new List<string>(); var name = "a";
     var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => { savedHomes.Add(home); return new FakeEnrollmentSession(home, name); });
     var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    var c = new AccountRecord { Name = "Synthetic C", Email = "c@example.invalid" };
+    var d = new AccountRecord { Name = "Synthetic D", Email = "d@example.invalid" };
+    var beforeB = switcher.GetMessage(f.B); var beforeC = switcher.GetMessage(c); var beforeD = switcher.GetMessage(d);
     var a = await switcher.AuthorizeAsync(f.A, LoginMethod.Browser, _ => { }, default);
+    Check("authorizing A does not change the status shown for B, C or D", a.Success && switcher.GetMessage(f.A).Contains(f.A.Name)
+        && switcher.GetMessage(f.B) == beforeB && switcher.GetMessage(c) == beforeC && switcher.GetMessage(d) == beforeD);
+    var afterA = switcher.GetMessage(f.A);
     name = "b";
     var b = await switcher.AuthorizeAsync(f.B, LoginMethod.Browser, _ => { }, default);
+    Check("selecting A after authorizing B still shows A's result", b.Success && switcher.GetMessage(f.A) == afterA
+        && switcher.GetMessage(f.B).Contains(f.B.Name) && !switcher.GetMessage(f.A).Contains(f.B.Name));
+    Check("accounts without authorization never inherit another account's success", !switcher.HasSaved(c) && !switcher.HasSaved(d)
+        && switcher.GetMessage(c) == beforeC && switcher.GetMessage(d) == beforeD);
     Check("enrolling a second account preserves the first independent login", a.Success && b.Success && f.Vault.Load(f.A.Id).SequenceEqual(Fixture.Login("a", "enrolled")) && f.Vault.Load(f.B.Id).SequenceEqual(Fixture.Login("b", "enrolled")));
     Check("each enrollment has a fresh home distinct from the desktop", savedHomes.Distinct().Count() == 2 && savedHomes.All(home => home != f.Runtime.Home && !Directory.Exists(home)) && f.Current().SequenceEqual(f.Original));
+    var restarted = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    Check("restart derives each account's authorization status from its own cache", restarted.GetMessage(f.A).Contains("已")
+        && restarted.GetMessage(f.B).Contains("已") && restarted.GetMessage(c) == beforeC && restarted.GetMessage(d) == beforeD);
+    f.B.Name = f.A.Name;
+    Check("duplicate account names do not merge status messages", switcher.GetMessage(f.A) == afterA && switcher.GetMessage(f.B) == b.Message);
+    var failed = await switcher.AuthorizeAsync(f.A, LoginMethod.Browser, _ => { }, default);
+    Check("a failed reauthorization updates only its own account's status", !failed.Success && switcher.GetMessage(f.A) == failed.Message
+        && switcher.GetMessage(f.B) == b.Message && switcher.GetMessage(c) == beforeC);
+    switcher.RemoveSaved(f.B);
+    Check("removing a saved login clears its stale success message", !switcher.HasSaved(f.B) && switcher.GetMessage(f.B) == beforeC);
 }
 {
     var f = New(); var started = new TaskCompletionSource();
     var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => new FakeEnrollmentSession(home, "b") { HoldCompletion = true });
     var switcher = new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe, enrollment);
+    var beforeA = switcher.GetMessage(f.A);
     using var cancel = new CancellationTokenSource();
     var attempt = switcher.AuthorizeAsync(f.B, LoginMethod.Browser, _ => started.SetResult(), cancel.Token);
     await started.Task;
+    Check("authorization progress belongs only to the account being authorized", switcher.GetMessage(f.B).Contains(f.B.Name)
+        && switcher.GetMessage(f.A) == beforeA);
     Check("enrollment cannot overlap a switch or save", await Reject(() => switcher.SwitchAsync(f.B, [f.A, f.B], "codex", default)) && await Reject(() => switcher.SaveCurrentAsync(f.A, default)));
     Check("a second enrollment is rejected while one is waiting", await Reject(() => switcher.AuthorizeAsync(f.A, LoginMethod.Browser, _ => { }, default)));
     cancel.Cancel(); await attempt;
+    Check("cancelling one authorization does not replace another account's status", switcher.GetMessage(f.B).Contains("取消")
+        && switcher.GetMessage(f.A) == beforeA);
 }
 {
     var f = New(); var data = Path.Combine(f.Root, "data"); var temporaryRoot = Path.Combine(data, "desktop-enrollment");
@@ -238,7 +263,7 @@ foreach (var message in new[] { "refresh_token_invalidated", "refresh_token_reus
 {
     var f = New(); var rpc = new CodexRpcException(-32000, message + " SYNTHETIC_SECRET_BACKEND_PAYLOAD");
     f.Probe.Action = (_, _, _) => throw rpc;
-    Check("invalidated sessions are distinguished from network failure: " + message, await Reject(() => f.Switch()) && rpc.LoginInvalidated && rpc.RequiresLogin && f.Switcher.Message.Contains("官方作废") && f.Current().SequenceEqual(f.Original) && !f.Switcher.Message.Contains("SYNTHETIC_SECRET"));
+    Check("invalidated sessions are distinguished from network failure: " + message, await Reject(() => f.Switch()) && rpc.LoginInvalidated && rpc.RequiresLogin && f.Switcher.GetMessage(f.B).Contains("官方作废") && f.Current().SequenceEqual(f.Original) && !f.Switcher.GetMessage(f.B).Contains("SYNTHETIC_SECRET"));
 }
 {
     var f = New(); var originalB = f.Vault.Load(f.B.Id); FileStream? locked = null;
@@ -257,7 +282,7 @@ foreach (var message in new[] { "refresh_token_invalidated", "refresh_token_reus
 {
     var f = New(); var rpc = new CodexRpcException(-32000, "error sending request: SYNTHETIC_SECRET_BACKEND_PAYLOAD");
     f.Probe.Action = (_, _, _) => throw rpc;
-    Check("network failure does not claim the login was invalidated", await Reject(() => f.Switch()) && !rpc.LoginInvalidated && !rpc.RequiresLogin && f.Switcher.Message.Contains("不代表账号登录已失效") && f.Current().SequenceEqual(f.Original));
+    Check("network failure does not claim the login was invalidated", await Reject(() => f.Switch()) && !rpc.LoginInvalidated && !rpc.RequiresLogin && f.Switcher.GetMessage(f.B).Contains("不代表账号登录已失效") && f.Current().SequenceEqual(f.Original));
 }
 {
     var f = New(); var enrollment = new DesktopLoginEnrollment(Path.Combine(f.Root, "data"), home => new FakeEnrollmentSession(home, "a"));

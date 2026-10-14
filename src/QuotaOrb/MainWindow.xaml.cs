@@ -85,7 +85,7 @@ public partial class MainWindow : Window
         var pending = desktop?.HasPending == true;
         DetailPanel.IsEnabled = a is not null || pending;
         var saved = a is not null && desktop?.HasSaved(a) == true;
-        DesktopSwitchMessage.Text = app.DesktopSwitchError ?? desktop?.Message ?? "界面测试模式不会读取或改动真实 Codex 登录。";
+        DesktopSwitchMessage.Text = app.DesktopSwitchError ?? desktop?.GetMessage(a) ?? "界面测试模式不会读取或改动真实 Codex 登录。";
         AuthorizeDesktopButton.IsEnabled = loginWindow is not null || (a is not null && desktop is not null && !pending && !Service.Busy);
         SwitchDesktopButton.IsEnabled = saved && !pending && !Service.Busy && a!.Enabled;
         DesktopRecoveryActions.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
