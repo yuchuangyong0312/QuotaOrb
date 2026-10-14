@@ -58,12 +58,15 @@ public sealed class DesktopSwitcher
         if (accountMessages.TryGetValue(account.Id, out var message)) return message;
         return GetAuthorizationState(account) switch
         {
-            DesktopAuthorizationState.Authorized => $"「{account.Name}」已保存切换授权。使用时从 Codex 托盘退出程序，再点击“切换并打开 Codex”。",
+            DesktopAuthorizationState.Authorized => SavedAuthorizationMessage(account),
             DesktopAuthorizationState.Legacy => "检测到旧版桌面登录记录，尚未确认独立切换授权。请先点击“授权切换登录”。",
             DesktopAuthorizationState.Unavailable => "此账号的切换登录缓存无法确认，请重新点击“授权切换登录”。",
             _ => "请点击“授权切换登录”，先为此账号完成授权。"
         };
     }
+
+    private static string SavedAuthorizationMessage(AccountRecord account) =>
+        $"「{account.Name}」已保存切换授权。使用时从 Codex 托盘退出程序，再点击“切换并打开 Codex”。";
 
     public async Task<LoginResult> AuthorizeAsync(AccountRecord account, LoginMethod method, Action<LoginPrompt> present, CancellationToken token)
     {
@@ -80,7 +83,7 @@ public sealed class DesktopSwitcher
             DesktopLogin.MatchAccount(DesktopLogin.Inspect(bytes), account);
             token.ThrowIfCancellationRequested();
             vault.Save(account.Id, bytes, pendingEnrollment: true);
-            SetMessage($"已保存「{account.Name}」的切换登录。使用时从 Codex 托盘退出程序，再点击“切换并打开 Codex”。", account);
+            SetMessage(SavedAuthorizationMessage(account), account);
             return new(true, false, GetMessage(account));
         }
         catch (Exception error)
