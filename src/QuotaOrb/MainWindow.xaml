@@ -45,15 +45,16 @@
             <TextBlock Text="Codex 账号额度" FontSize="23" FontWeight="SemiBold" VerticalAlignment="Center"/>
             <Border Background="#363A44" CornerRadius="11" Padding="9,3" Margin="12,0,0,0" VerticalAlignment="Center"><TextBlock x:Name="AccountCount" Foreground="{StaticResource Subtle}" FontSize="12"/></Border>
           </StackPanel>
-          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <WrapPanel VerticalAlignment="Center">
             <Button Click="Add_Click" Padding="16,10" AutomationProperties.Name="添加账号">
               <StackPanel Orientation="Horizontal">
                 <Path Width="14" Height="14" Data="M 7,0 L 7,14 M 0,7 L 14,7" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2" VerticalAlignment="Center" Margin="0,0,7,0"/>
                 <TextBlock Text="添加账号" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
-            <Button x:Name="RefreshAllButton" Content="核验所有额度" Click="RefreshAll_Click" Padding="16,10" Margin="0"/>
-          </StackPanel>
+            <Button x:Name="RefreshAllButton" Content="核验所有额度" Click="RefreshAll_Click" Padding="16,10"/>
+            <Button x:Name="CheckAuthorizationsButton" Content="检查切换授权" Click="CheckAuthorizations_Click" Padding="16,10" Margin="0"/>
+          </WrapPanel>
         </WrapPanel>
         <TextBlock Grid.Column="2" x:Name="DetailName" FontSize="20" FontWeight="SemiBold" Text="选择一个账号" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" VerticalAlignment="Center" Margin="0,0,8,0"/>
       </Grid>
@@ -137,6 +138,7 @@
                   <Button x:Name="KeepDesktopButton" Content="保留当前登录" Click="KeepDesktop_Click" Margin="0"/>
                 </WrapPanel>
               </StackPanel>
+              <TextBlock x:Name="DesktopAuthorizationMessage" TextWrapping="Wrap" Foreground="{StaticResource Subtle}" Margin="0,10,0,0"/>
               <TextBlock x:Name="DesktopSwitchMessage" TextWrapping="Wrap" Foreground="{StaticResource Subtle}" Margin="0,8,0,0"/>
             </StackPanel></Border>
             <Border Style="{StaticResource DetailCard}"><StackPanel>

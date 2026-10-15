@@ -60,6 +60,13 @@ public static class DesktopLogin
 
     public static string Fingerprint(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
 
+    internal static string AccessToken(byte[] bytes)
+    {
+        Inspect(bytes);
+        using var document = JsonDocument.Parse(bytes);
+        return document.RootElement.GetProperty("tokens").GetProperty("access_token").GetString()!;
+    }
+
     public static bool Same(byte[] first, byte[] second) => CryptographicOperations.FixedTimeEquals(SHA256.HashData(first), SHA256.HashData(second));
 
     private static JsonDocument Claims(string token)

@@ -59,7 +59,7 @@ public partial class App : Application
                 try
                 {
                     var installation = new CodexInstallation();
-                    DesktopSwitch = new DesktopSwitcher(root, new WindowsDesktopRuntime(installation), new DesktopLoginProbe(installation), new DesktopLoginEnrollment(root, installation));
+                    DesktopSwitch = new DesktopSwitcher(root, new WindowsDesktopRuntime(installation), new DesktopLoginProbe(installation), new DesktopLoginEnrollment(root, installation), new DesktopAuthorizationProbe(root, installation));
                     DesktopSwitch.Changed += () => Dispatcher.InvokeAsync(UpdateViews);
                 }
                 catch { DesktopSwitchError = "桌面登录缓存无法打开，查询额度仍可使用。请检查本地数据目录权限。"; }

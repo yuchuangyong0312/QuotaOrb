@@ -5,6 +5,8 @@ using System.Text;
 using System.Text.Json;
 using QuotaOrb.Services;
 
+if (args.Contains("app-server")) { await AuthorizationChecks.RunRpcHelperAsync(); return; }
+
 if (args.Contains("--inspect-local-read-only"))
 {
     var runtime = new WindowsDesktopRuntime(new CodexInstallation());
@@ -419,6 +421,7 @@ foreach (var message in new[] { "refresh_token_invalidated", "refresh_token_reus
     Check("previous preview login cache remains readable", !saved.PendingEnrollment && saved.Login.SequenceEqual(legacy));
     CryptographicOperations.ZeroMemory(saved.Login);
 }
+await AuthorizationChecks.RunAsync(root, Check);
 File.WriteAllText(Path.Combine(root, "result.json"), JsonSerializer.Serialize(new { success = true, checks }));
 Console.WriteLine($"{checks.Count} desktop switch checks passed. Synthetic test output: {root}");
 
@@ -448,7 +451,7 @@ sealed class Fixture
     public void Write(byte[] bytes) => File.WriteAllBytes(Path.Combine(Runtime.Home, "auth.json"), bytes);
     public static byte[] Login(string name, string revision = "initial")
     {
-        var claims = new Dictionary<string, object> { ["email"] = name + "@example.invalid", ["https://api.openai.com/auth"] = new { chatgpt_account_id = "account-" + name, chatgpt_user_id = "user-" + name } };
+        var claims = new Dictionary<string, object> { ["email"] = name + "@example.invalid", ["jti"] = revision, ["https://api.openai.com/auth"] = new { chatgpt_account_id = "account-" + name, chatgpt_user_id = "user-" + name } };
         var token = "synthetic." + Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(claims)).TrimEnd('=').Replace('+', '-').Replace('/', '_') + ".unsigned";
         return JsonSerializer.SerializeToUtf8Bytes(new { auth_mode = "chatgpt", tokens = new { access_token = token, id_token = token, account_id = "account-" + name, refresh_token = "SYNTHETIC_REFRESH_" + name + "_" + revision } });
     }

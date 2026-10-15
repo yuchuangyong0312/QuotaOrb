@@ -36,6 +36,7 @@ public sealed class CodexClient : IAsyncDisposable, ILoginConnection, IDesktopEn
     private readonly Task reader;
     private readonly Task stderrDrain;
     private int sequence;
+    private bool externalCheck;
     public Task Completion => reader;
     public event Action<string, JsonElement>? Notification;
 
@@ -46,6 +47,8 @@ public sealed class CodexClient : IAsyncDisposable, ILoginConnection, IDesktopEn
 
     // The caller owns a fresh private profile. Never enroll in the live desktop home.
     internal static CodexClient ForDesktopEnrollment(string executable, string home) => new(executable, home, true);
+
+    internal static CodexClient ForAuthorizationCheck(string executable, string home) => new(executable, home, true) { externalCheck = true };
 
     private CodexClient(string executable, string profile, bool desktopVerification)
     {
@@ -79,7 +82,9 @@ public sealed class CodexClient : IAsyncDisposable, ILoginConnection, IDesktopEn
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
-        await RequestAsync("initialize", new { clientInfo = new { name = "quota_orb", title = "额度管理", version = typeof(CodexClient).Assembly.GetName().Version?.ToString(3) ?? "2.0.0" } }, cancellationToken);
+        var clientInfo = new { name = "quota_orb", title = "额度管理", version = typeof(CodexClient).Assembly.GetName().Version?.ToString(3) ?? "2.0.0" };
+        object parameters = externalCheck ? new { clientInfo, capabilities = new { experimentalApi = true } } : new { clientInfo };
+        await RequestAsync("initialize", parameters, cancellationToken);
         await SendAsync(new { method = "initialized", @params = new { } }, cancellationToken);
     }
 
@@ -120,11 +125,17 @@ public sealed class CodexClient : IAsyncDisposable, ILoginConnection, IDesktopEn
                 using (doc)
                 {
                     var message = doc.RootElement;
-                    if (QuotaParser.Get(message, "id") is { ValueKind: JsonValueKind.Number } id && id.TryGetInt32(out var number) && pending.TryGetValue(number, out var waiter))
+                    if (QuotaParser.Text(message, "method") is null && QuotaParser.Get(message, "id") is { ValueKind: JsonValueKind.Number } id && id.TryGetInt32(out var number) && pending.TryGetValue(number, out var waiter))
                     {
                         if (QuotaParser.Get(message, "error") is { ValueKind: JsonValueKind.Object } error)
                             waiter.TrySetException(new CodexRpcException(QuotaParser.Get(error, "code")?.GetInt32() ?? 0, QuotaParser.Text(error, "message") ?? ""));
                         else if (QuotaParser.Get(message, "result") is { } result) waiter.TrySetResult(result.Clone());
+                    }
+                    else if (externalCheck && QuotaParser.Get(message, "id") is { } requestId && QuotaParser.Text(message, "method") is not null)
+                    {
+                        // External-token checks must never rotate a saved desktop session.
+                        // Reject refresh requests promptly instead of leaving the backend waiting.
+                        await SendAsync(new { id = requestId.Clone(), error = new { code = -32000, message = "Token refresh is disabled for authorization checks; sign in again if needed." } }, lifetime.Token);
                     }
                     else if (QuotaParser.Text(message, "method") is { } method && QuotaParser.Get(message, "params") is { } parameters)
                         Notification?.Invoke(method, parameters.Clone());

@@ -24,15 +24,99 @@ public sealed class DesktopSwitcher
     private readonly IDesktopLoginProbe probe;
     private readonly DesktopAuthFile auth;
     private readonly DesktopLoginEnrollment? enrollment;
+    private readonly IDesktopAuthorizationProbe? authorizationProbe;
+    private readonly ConcurrentDictionary<string, AuthorizationCheckResult> authorizationChecks = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly ConcurrentDictionary<string, string> accountMessages = new(StringComparer.Ordinal);
     private string? recoveryMessage;
     public bool HasPending => vault.HasPending;
     public event Action? Changed;
 
-    public DesktopSwitcher(string dataRoot, IDesktopRuntime runtime, IDesktopLoginProbe probe, DesktopLoginEnrollment? enrollment = null)
+    public DesktopSwitcher(string dataRoot, IDesktopRuntime runtime, IDesktopLoginProbe probe, DesktopLoginEnrollment? enrollment = null, IDesktopAuthorizationProbe? authorizationProbe = null)
     {
         vault = new(dataRoot); this.runtime = runtime; this.probe = probe; this.enrollment = enrollment; auth = new(runtime.Home);
+        this.authorizationProbe = authorizationProbe;
+    }
+
+    public string GetAuthorizationMessage(AccountRecord? account)
+    {
+        if (account is null) return "请选择一个账号。";
+        if (authorizationChecks.TryGetValue(account.Id, out var result))
+            return $"「{account.Name}」{result.Summary}（{result.CheckedAt.ToLocalTime():MM/dd HH:mm}）。{result.Advice}";
+        return GetAuthorizationState(account) switch
+        {
+            DesktopAuthorizationState.Authorized => $"「{account.Name}」已保存切换授权，尚未在线检查。",
+            DesktopAuthorizationState.Legacy => $"「{account.Name}」需要独立切换授权，请点击“授权切换登录”。",
+            DesktopAuthorizationState.Unavailable => $"「{account.Name}」本地切换授权无法读取或账号不匹配，请重新授权。",
+            _ => $"「{account.Name}」尚未保存切换授权。"
+        };
+    }
+
+    public string? GetOperationMessage(AccountRecord? account)
+    {
+        if (recoveryMessage is { } recovery) return recovery;
+        return account is not null && accountMessages.TryGetValue(account.Id, out var message)
+            && message != SavedAuthorizationMessage(account) ? "上次操作：" + message : null;
+    }
+
+    public async Task CheckAllAuthorizationsAsync(IReadOnlyList<AccountRecord> accounts, Action<AuthorizationCheckResult> report, CancellationToken token)
+    {
+        if (!await gate.WaitAsync(0, token)) throw new InvalidOperationException("请等当前切换或授权结束。");
+        try
+        {
+            RequireNoPending();
+            if (authorizationProbe is null) throw new InvalidOperationException("切换授权检查组件不可用。");
+            foreach (var account in accounts)
+            {
+                token.ThrowIfCancellationRequested();
+                byte[]? bytes = null;
+                var contactingServer = false;
+                AuthorizationCheckState state;
+                try
+                {
+                    if (!vault.Has(account.Id)) state = AuthorizationCheckState.Missing;
+                    else
+                    {
+                        var saved = vault.LoadSnapshot(account.Id); bytes = saved.Login;
+                        var identity = DesktopLogin.Inspect(bytes);
+                        DesktopLogin.MatchAccount(identity, account);
+                        if (!saved.AuthorizedForSwitching) state = AuthorizationCheckState.Legacy;
+                        else
+                        {
+                            // A running desktop may already have newer tokens. Read only;
+                            // a fresh independent authorization must still take precedence.
+                            if (!saved.PendingEnrollment)
+                            {
+                                byte[]? current = null;
+                                try
+                                {
+                                    current = auth.Read();
+                                    if (DesktopLogin.Inspect(current).Matches(identity))
+                                    { Clear(bytes); bytes = current; current = null; }
+                                }
+                                catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException) { }
+                                finally { Clear(current); }
+                            }
+                            var accessToken = DesktopLogin.AccessToken(bytes);
+                            contactingServer = true;
+                            state = await authorizationProbe.CheckAsync(accessToken, identity, token);
+                        }
+                    }
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                catch (Exception error) when (error is CryptographicException or InvalidDataException or JsonException)
+                { state = AuthorizationCheckState.Unavailable; }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or CodexRpcException)
+                { state = contactingServer ? AuthorizationCheckState.Unconfirmed : AuthorizationCheckState.Unavailable; }
+                finally { Clear(bytes); }
+                var result = new AuthorizationCheckResult(account.Id, account.Name, state, DateTimeOffset.UtcNow);
+                authorizationChecks[account.Id] = result;
+                accountMessages.TryRemove(account.Id, out _);
+                report(result);
+                Changed?.Invoke();
+            }
+        }
+        finally { gate.Release(); }
     }
 
     public bool HasSaved(AccountRecord account) => vault.Has(account.Id);
@@ -83,6 +167,7 @@ public sealed class DesktopSwitcher
             DesktopLogin.MatchAccount(DesktopLogin.Inspect(bytes), account);
             token.ThrowIfCancellationRequested();
             vault.Save(account.Id, bytes, pendingEnrollment: true);
+            authorizationChecks.TryRemove(account.Id, out _);
             SetMessage(SavedAuthorizationMessage(account), account);
             return new(true, false, GetMessage(account));
         }
@@ -125,6 +210,7 @@ public sealed class DesktopSwitcher
     public async Task SwitchAsync(AccountRecord target, IReadOnlyList<AccountRecord> accounts, string pool, CancellationToken token)
     {
         if (!await gate.WaitAsync(0, token)) throw new InvalidOperationException("已有切换操作正在进行。");
+        authorizationChecks.TryRemove(target.Id, out _);
         byte[]? original = null, replacement = null;
         SwitchJournal? journal = null;
         try
@@ -191,6 +277,7 @@ public sealed class DesktopSwitcher
             }
             finally { Clear(launched); }
             vault.Complete();
+            authorizationChecks[target.Id] = new(target.Id, target.Name, AuthorizationCheckState.Valid, DateTimeOffset.UtcNow);
             SetMessage($"已为「{target.Name}」打开 Codex。请核对 Codex 中显示的账号。", target);
         }
         catch (Exception error)
@@ -295,7 +382,7 @@ public sealed class DesktopSwitcher
     public void RemoveSaved(AccountRecord account)
     {
         if (!gate.Wait(0)) throw new InvalidOperationException("请等待切换结束。");
-        try { RequireNoPending(); vault.Remove(account.Id); accountMessages.TryRemove(account.Id, out _); Changed?.Invoke(); }
+        try { RequireNoPending(); vault.Remove(account.Id); accountMessages.TryRemove(account.Id, out _); authorizationChecks.TryRemove(account.Id, out _); Changed?.Invoke(); }
         finally { gate.Release(); }
     }
     private void RequireNoPending() { if (vault.HasPending) throw new InvalidOperationException("请先处理未完成的切换：退出 Codex 后点击“恢复上次登录”。"); }

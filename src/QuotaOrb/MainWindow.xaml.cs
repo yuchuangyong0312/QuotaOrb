@@ -60,6 +60,7 @@ public partial class MainWindow : Window
         AccountCount.Text = $"{rows.Count} 个账号";
         EmptyLabel.Text = Service.ComponentAvailable ? "还没有账号\n\n点击右上角“添加账号”，再完成官方登录授权。" : CodexInstallation.MissingMessage;
         RefreshAllButton.IsEnabled = !Service.Busy;
+        CheckAuthorizationsButton.IsEnabled = !Service.Busy && app.DesktopSwitch is { HasPending: false } && rows.Count > 0;
         StoragePanel.Visibility = Service.StorageError is null ? Visibility.Collapsed : Visibility.Visible;
         StorageMessage.Text = Service.StorageError ?? "";
         RetrySaveButton.IsEnabled = !Service.Busy;
@@ -130,7 +131,9 @@ public partial class MainWindow : Window
         var pending = desktop?.HasPending == true;
         DetailPanel.IsEnabled = a is not null || pending;
         var authorized = a is not null && desktop?.HasAuthorized(a) == true;
-        DesktopSwitchMessage.Text = app.DesktopSwitchError ?? desktop?.GetMessage(a) ?? "界面测试模式不会读取或改动真实 Codex 登录。";
+        DesktopAuthorizationMessage.Text = app.DesktopSwitchError ?? desktop?.GetAuthorizationMessage(a) ?? "界面测试模式不会读取或改动真实 Codex 登录。";
+        DesktopSwitchMessage.Text = desktop?.GetOperationMessage(a) ?? "";
+        DesktopSwitchMessage.Visibility = string.IsNullOrEmpty(DesktopSwitchMessage.Text) ? Visibility.Collapsed : Visibility.Visible;
         AuthorizeDesktopButton.IsEnabled = loginWindow is not null || (a is not null && desktop is not null && !pending && !Service.Busy);
         SwitchDesktopButton.IsEnabled = authorized && !pending && !Service.Busy && a!.Enabled;
         DesktopRecoveryActions.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
@@ -242,6 +245,17 @@ public partial class MainWindow : Window
     {
         try { await Service.RefreshAllAsync(true); }
         catch { Inform("核验暂未完成，请稍后重试。"); }
+    }
+    private void CheckAuthorizations_Click(object sender, RoutedEventArgs e)
+    {
+        if (app.DesktopSwitch is not { } desktop || Service.Busy || desktop.HasPending || Service.Data.Accounts.Count == 0) return;
+        var accounts = Service.Data.Accounts.ToArray();
+        new AuthorizationCheckWindow(accounts, (report, token) => Service.RunDesktopOperationAsync(null, async shutdown =>
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, shutdown);
+            await desktop.CheckAllAuthorizationsAsync(accounts, report, linked.Token);
+        })) { Owner = this }.ShowDialog();
+        Render();
     }
     private void RetrySave_Click(object sender, RoutedEventArgs e) { if (!Service.Busy) Service.Save(); }
     private void Settings_Click(object sender, RoutedEventArgs e) => new SettingsWindow(app) { Owner = this }.ShowDialog();

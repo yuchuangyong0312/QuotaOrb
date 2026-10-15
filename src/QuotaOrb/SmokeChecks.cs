@@ -39,6 +39,7 @@ internal static class SmokeChecks
             Check("native five-account list",window.AccountsGrid.Items.Count==5);
             Check("UI smoke never opens the real desktop login cache",app.DesktopSwitch is null&&!Directory.Exists(Path.Combine(root,"desktop-logins")));
             Check("desktop switch requires a saved login and live adapter",!window.AuthorizeDesktopButton.IsEnabled&&!window.SwitchDesktopButton.IsEnabled&&window.DesktopRecoveryActions.Visibility==Visibility.Collapsed);
+            Check("batch authorization check requires a live adapter", !window.CheckAuthorizationsButton.IsEnabled);
             Check("only dashboard exists, no floating window",app.Windows.Count==1&&window.ShowInTaskbar);
             Check("window and sidebar use the high-resolution embedded logo",window.Icon is BitmapSource { PixelWidth: 256, PixelHeight: 256 }&&window.BrandLogo.Source is BitmapSource { PixelWidth: 256, PixelHeight: 256 });
             var arguments = Environment.GetCommandLineArgs();
@@ -125,6 +126,16 @@ internal static class SmokeChecks
                     await client.RequestAsync("account/login/cancel",new{loginId=QuotaParser.Text(login,"loginId")},CancellationToken.None);
                     Check("C# login cancel completes",true);
                 }
+            }
+            {
+                var checkHome = Path.Combine(root, "external-check-component");
+                SwitchFiles.PrivateDirectory(checkHome);
+                await using var client = CodexClient.ForAuthorizationCheck(component!, checkHome);
+                await client.InitializeAsync(CancellationToken.None);
+                var claims = new Dictionary<string, object> { ["email"] = "check@example.invalid", ["sub"] = "synthetic-check", ["https://api.openai.com/profile"] = new { email = "check@example.invalid" }, ["https://api.openai.com/auth"] = new { chatgpt_account_id = "synthetic-check", chatgpt_user_id = "synthetic-user", chatgpt_plan_type = "plus" } };
+                var access = "e30." + Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(claims)).TrimEnd('=').Replace('+', '-').Replace('/', '_') + ".synthetic";
+                var login = await client.RequestAsync("account/login/start", new { type = "chatgptAuthTokens", accessToken = access, chatgptAccountId = "synthetic-check" }, CancellationToken.None);
+                Check("installed helper supports external access-token mode without desktop credentials", QuotaParser.Text(login, "type") == "chatgptAuthTokens" && !File.Exists(Path.Combine(checkHome, "auth.json")));
             }
             var firstCard=(FrameworkElement)window.AccountsGrid.ItemContainerGenerator.ContainerFromIndex(0);
             var secondCard=(FrameworkElement)window.AccountsGrid.ItemContainerGenerator.ContainerFromIndex(1);
@@ -221,6 +232,7 @@ internal static class SmokeChecks
             Check("periodic rendering preserves account scroll position",previousOffset>0&&Math.Abs(accountScroll.VerticalOffset-previousOffset)<1);
             var editor=new AccountEditor(new AccountRecord(),true){Owner=window};editor.Show();editor.UpdateLayout();Capture(editor,Path.Combine(root,"editor.png"));editor.Close();
             var appearanceSettings=new SettingsWindow(app){Owner=window};appearanceSettings.Show();appearanceSettings.UpdateLayout();Capture(appearanceSettings,Path.Combine(root,"settings.png"));appearanceSettings.Close();
+            await CheckAuthorizationWindowAsync(window, root, Check);
             await CheckLoginWindowAsync(window, root, Check);
             var accounts=app.Service.Data.Accounts.ToList();
             try
@@ -237,6 +249,26 @@ internal static class SmokeChecks
         }
         catch(Exception e){File.WriteAllText(Path.Combine(root,"result.json"),JsonSerializer.Serialize(new{success=false,error=e.ToString(),checks}));}
         finally{app.Quit();}
+    }
+    private static async Task CheckAuthorizationWindowAsync(MainWindow window, string root, Action<string,bool> check)
+    {
+        var accounts = new[] { new AccountRecord { Name = "检查通过示例" }, new AccountRecord { Name = "需要更新示例" }, new AccountRecord { Name = "暂时无法确认示例" }, new AccountRecord { Name = "尚未授权示例" } };
+        var states = new[] { AuthorizationCheckState.Valid, AuthorizationCheckState.NeedsRefresh, AuthorizationCheckState.Unconfirmed, AuthorizationCheckState.Missing };
+        var dialog = new AuthorizationCheckWindow(accounts, (report, _) =>
+        {
+            for (var i = 0; i < accounts.Length; i++) report(new(accounts[i].Id, accounts[i].Name, states[i], DateTimeOffset.UtcNow));
+            return Task.CompletedTask;
+        }) { Owner = window };
+        dialog.Show(); await dialog.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+        check("batch result dialog shows all accounts and accurate summary", dialog.Progress.Text.Contains("4 个账号，1 个通过") && dialog.Results.Count == 4 && dialog.Results[accounts[1].Id].Text.Contains("可能过期"));
+        dialog.UpdateLayout(); Capture(dialog, Path.Combine(root, "authorization-checks.png")); dialog.Close();
+        var entered = new TaskCompletionSource();
+        var cancelled = new AuthorizationCheckWindow(accounts, async (_, token) => { entered.SetResult(); await Task.Delay(Timeout.Infinite, token); }) { Owner = window };
+        cancelled.Show(); await entered.Task;
+        cancelled.CloseButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await cancelled.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+        check("cancelling a batch retains incomplete results and permits closing", cancelled.Progress.Text.Contains("已取消") && cancelled.Results.Values.All(r => r.Text == "本次未检查") && cancelled.CloseButton.IsEnabled);
+        cancelled.Close();
     }
     private static async Task CheckLoginWindowAsync(MainWindow window, string root, Action<string,bool> check)
     {

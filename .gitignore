@@ -22,6 +22,8 @@ auth.json
 *.age
 profiles/
 desktop-logins/
+desktop-enrollment/
+desktop-checks/
 # Local project notes and unfinished experiments are not part of the public release.
 /AGENTS.md
 /DESIGN.md

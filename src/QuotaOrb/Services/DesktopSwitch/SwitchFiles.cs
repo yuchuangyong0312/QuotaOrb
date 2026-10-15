@@ -5,6 +5,25 @@ namespace QuotaOrb.Services;
 
 internal static class SwitchFiles
 {
+    internal static void DeletePrivateAttempt(string root, string directory)
+    {
+        var full = Path.GetFullPath(directory);
+        if (!string.Equals(Path.GetDirectoryName(full), Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase)
+            || !Guid.TryParseExact(Path.GetFileName(full), "N", out _)) throw new IOException("临时检查目录无法验证。");
+        CheckPath(full);
+        if (!Directory.Exists(full)) return;
+        void CheckTree(string path)
+        {
+            foreach (var entry in Directory.EnumerateFileSystemEntries(path))
+            {
+                CheckPath(entry);
+                if (Directory.Exists(entry)) CheckTree(entry);
+            }
+        }
+        CheckTree(full);
+        Directory.Delete(full, true);
+    }
+
     public static void CheckPath(string path)
     {
         var full = Path.GetFullPath(path);
