@@ -17,6 +17,8 @@ public partial class MainWindow : Window
     private const int DashboardHotkeyId = 0x514F;
     private string? selectedId;
     private LoginWindow? loginWindow;
+    private ContextMenu? resetCreditsMenu;
+    private string? resetCreditsAccountId;
     private AccountRecord? Selected => Service.Data.Accounts.FirstOrDefault(a => a.Id == selectedId);
     public MainWindow(App app)
     {
@@ -24,6 +26,9 @@ public partial class MainWindow : Window
         if (typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Contains("-preview",StringComparison.Ordinal) == true)
             Title += " · 账号切换测试版";
         Closing += (_, e) => { if (!app.Exiting) { e.Cancel = true; Hide(); } };
+        IsVisibleChanged += (_, _) => { if (!IsVisible) CloseResetCreditsMenu(); };
+        LocationChanged += (_, _) => CloseResetCreditsMenu();
+        SizeChanged += (_, _) => CloseResetCreditsMenu();
         SourceInitialized += (_, _) =>
         {
             hotkeySource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
@@ -65,6 +70,16 @@ public partial class MainWindow : Window
             AccountsGrid.UpdateLayout();
             scroller.ScrollToVerticalOffset(scrollOffset);
         }
+        if (resetCreditsMenu?.IsOpen == true)
+        {
+            AccountsGrid.UpdateLayout();
+            var row = rows.FirstOrDefault(r => r.Record.Id == resetCreditsAccountId);
+            var container = row is null ? null : AccountsGrid.ItemContainerGenerator.ContainerFromItem(row);
+            var presenter = container is null ? null : FindVisualChild<ContentPresenter>(container);
+            if (presenter?.ContentTemplate?.FindName("ResetCreditsButton", presenter) is Button button && row is not null)
+                PlaceResetCreditsMenu(button, row);
+            else CloseResetCreditsMenu();
+        }
     }
 
     internal static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
@@ -80,14 +95,32 @@ public partial class MainWindow : Window
 
     private void ResetCredits_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button { DataContext: AccountRow row, ContextMenu: { } menu } button)
+        if (sender is Button { DataContext: AccountRow row } button)
         {
-            menu.DataContext = row;
-            menu.PlacementTarget = button;
-            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-            menu.IsOpen = true;
+            CloseResetCreditsMenu();
+            resetCreditsMenu = (ContextMenu)Resources["ResetCreditsMenu"];
+            resetCreditsAccountId = row.Record.Id;
+            PlaceResetCreditsMenu(button, row);
+            resetCreditsMenu.IsOpen = true;
             e.Handled = true;
         }
+    }
+
+    private void PlaceResetCreditsMenu(Button button, AccountRow row)
+    {
+        if (resetCreditsMenu is not { } menu) return;
+        // Cards are replaced on every pulse. Anchor the shared popup to the stable
+        // list, then resolve the current button for this account after each render.
+        menu.DataContext = row;
+        menu.PlacementTarget = AccountsGrid;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.PlacementRectangle = button.TransformToAncestor(AccountsGrid).TransformBounds(new Rect(button.RenderSize));
+    }
+
+    private void CloseResetCreditsMenu() { if (resetCreditsMenu is { } menu) menu.IsOpen = false; }
+    private void ResetCredits_Closed(object sender, RoutedEventArgs e)
+    {
+        if (resetCreditsMenu?.IsOpen != true) resetCreditsAccountId = null;
     }
 
     private void RenderDetails()

@@ -146,15 +146,49 @@ internal static class SmokeChecks
             var creditsButton=CardElement<Button>(firstCard,"ResetCreditsButton");
             creditsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await app.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ContextIdle);
-            var creditMenu=creditsButton.ContextMenu;
+            var creditMenu=(ContextMenu)window.Resources["ResetCreditsMenu"];
             creditMenu.UpdateLayout();
             var creditRow=(AccountRow)firstCard.DataContext;
-            Check("reset dropdown opens for its own account",creditMenu.IsOpen&&ReferenceEquals(creditMenu.DataContext,creditRow)&&ReferenceEquals(creditMenu.PlacementTarget,creditsButton));
+            Check("reset dropdown opens for its own account with a durable anchor",creditMenu.IsOpen&&ReferenceEquals(creditMenu.DataContext,creditRow)&&ReferenceEquals(creditMenu.PlacementTarget,window.AccountsGrid));
             Check("reset dates use each official expiry sorted in local time",creditRow.CreditExpiryRows.Count==2&&creditRow.CreditExpiryRows[0].Expires==creditRow.Record.Snapshot!.ResetCredits![1].ExpiresAt!.Value.ToLocalTime().ToString("yyyy/MM/dd HH:mm")&&creditRow.CreditExpiryRows[1].Expires==creditRow.Record.Snapshot.ResetCredits[0].ExpiresAt!.Value.ToLocalTime().ToString("yyyy/MM/dd HH:mm")&&creditRow.CreditExpiryNotice=="");
+            var menuPosition=creditMenu.PointToScreen(new Point());
+            for(var refresh=0;refresh<3;refresh++)
+            {
+                window.Render();window.UpdateLayout();
+                await app.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ContextIdle);
+                var refreshedPosition=creditMenu.PointToScreen(new Point());
+                Check($"open reset popup stays anchored across dashboard refresh {refresh+1}",creditMenu.IsOpen&&(refreshedPosition-menuPosition).Length<2&&((AccountRow)creditMenu.DataContext).Record.Id==creditRow.Record.Id);
+            }
             var menuBitmap=new RenderTargetBitmap((int)Math.Ceiling(creditMenu.ActualWidth),(int)Math.Ceiling(creditMenu.ActualHeight),96,96,PixelFormats.Pbgra32);
             menuBitmap.Render(creditMenu);
             var menuEncoder=new PngBitmapEncoder();menuEncoder.Frames.Add(BitmapFrame.Create(menuBitmap));
             using(var image=File.Create(Path.Combine(root,"reset-credits.png")))menuEncoder.Save(image);
+            var originalSnapshot=creditRow.Record.Snapshot;
+            try
+            {
+                creditRow.Record.Snapshot=originalSnapshot! with { ResetCount=1,ResetCredits=[new("renewed","available","codexRateLimits",DateTimeOffset.UtcNow.AddDays(5),"重置卡")] };
+                app.UpdateViews();window.UpdateLayout();
+                await app.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ContextIdle);
+                var updatedCreditRow=(AccountRow)creditMenu.DataContext;
+                Check("open popup refreshes its account's new expiry data",creditMenu.IsOpen&&updatedCreditRow.Record.Id==creditRow.Record.Id&&updatedCreditRow.CreditExpiryRows.Count==1&&updatedCreditRow.CreditExpiryRows[0].Expires==creditRow.Record.Snapshot.ResetCredits![0].ExpiresAt!.Value.ToLocalTime().ToString("yyyy/MM/dd HH:mm"));
+            }
+            finally {creditRow.Record.Snapshot=originalSnapshot;window.Render();window.UpdateLayout();}
+            app.Service.Data.Accounts.Remove(creditRow.Record);
+            try
+            {
+                window.Render();window.UpdateLayout();
+                await app.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ContextIdle);
+                Check("removing the popup account closes its details",!creditMenu.IsOpen);
+            }
+            finally {app.Service.Data.Accounts.Insert(0,creditRow.Record);window.Render();window.UpdateLayout();}
+            var refreshedCard=(FrameworkElement)window.AccountsGrid.ItemContainerGenerator.ContainerFromIndex(0);
+            CardElement<Button>(refreshedCard,"ResetCreditsButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await app.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ContextIdle);
+            Check("reset popup can reopen after its previous owner was removed",creditMenu.IsOpen&&((AccountRow)creditMenu.DataContext).Record.Id==creditRow.Record.Id);
+            window.Hide();
+            Check("hiding dashboard closes the shared popup",!creditMenu.IsOpen);
+            app.ShowDashboard();window.UpdateLayout();
+            window.AccountsGrid.SelectedItem=window.AccountsGrid.Items.OfType<AccountRow>().First();
             creditMenu.IsOpen=false;
             var snapshot=creditRow.Record.Snapshot!;
             AccountRow CreditsRow(int? count,List<ResetCredit>? credits)=>new(new AccountRecord{Snapshot=snapshot with{ResetCount=count,ResetCredits=credits}},"codex",DateTimeOffset.UtcNow,false);
