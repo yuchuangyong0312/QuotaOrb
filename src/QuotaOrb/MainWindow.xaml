@@ -90,10 +90,12 @@
                 <Grid Margin="0,5,0,0">
                   <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                   <TextBlock x:Name="LastSyncText" Text="{Binding Synced, StringFormat=上次同步  {0}}" Foreground="{StaticResource Subtle}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Synced, StringFormat=上次同步  {0}}"/>
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
-                    <TextBlock x:Name="CreditsText" Text="{Binding Credits}" Foreground="{StaticResource Subtle}" FontSize="12" VerticalAlignment="Center"/>
-                    <Button x:Name="ResetCreditsButton" Content="▼" Click="ResetCredits_Click" Style="{StaticResource QuietButton}" Width="22" Height="22" Padding="2" Margin="3,0,0,0" BorderThickness="0" FontSize="9" ToolTip="查看重置卡到期时间" AutomationProperties.Name="查看重置卡到期时间"/>
-                  </StackPanel>
+                  <Button Grid.Column="1" x:Name="ResetCreditsButton" Click="ResetCredits_Click" Style="{StaticResource QuietButton}" Height="22" Padding="0" Margin="8,0,0,0" BorderThickness="0" ToolTip="查看重置卡到期时间" AutomationProperties.Name="查看重置卡到期时间">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock x:Name="CreditsText" Text="{Binding Credits}" Foreground="{StaticResource Subtle}" FontSize="12" VerticalAlignment="Center"/>
+                      <TextBlock Text="▼" Width="22" Margin="3,0,0,0" FontSize="9" TextAlignment="Center" VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </Button>
                 </Grid>
               </StackPanel>
             </DataTemplate></ListBox.ItemTemplate>
