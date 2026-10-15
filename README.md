@@ -75,6 +75,10 @@ dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contain
 
 也可运行 `scripts/bootstrap.ps1` 下载并校验官方 SDK 到项目 `.tools`，再运行 `scripts/publish.ps1` 生成包含安装脚本、许可证和校验文件的内部发布目录。
 
+安装或更新后，从受管理的终端（如 Codex）启动长期运行的工具时，使用 `scripts/start-local.ps1`。它通过现有 Windows 桌面启动，避免工具继承终端的进程作业、随宿主退出而被结束；桌面不可用时会报错，请从桌面快捷方式打开。直接双击 EXE 或桌面快捷方式也可正常使用。
+
+启动独立性回归检查可在 PowerShell 7 中运行 `scripts/test-launch-lifetime.ps1 -ExecutablePath .\dist\QuotaOrb-2.1.4\QuotaOrb.exe`。检查使用独立虚构数据，关闭模拟启动宿主及其进程作业后，要求工具仍能完成原生界面检查；加 `-LegacyStart` 可复现旧启动方式导致的失败。
+
 原生界面检查需安装 Codex，指定**全新独立**的测试目录：
 
 ```powershell
