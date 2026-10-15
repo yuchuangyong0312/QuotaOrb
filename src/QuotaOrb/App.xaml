@@ -3,7 +3,7 @@
     <SolidColorBrush x:Key="Ink" Color="#F0F1F5"/><SolidColorBrush x:Key="Subtle" Color="#A7ADB9"/><SolidColorBrush x:Key="Accent" Color="#85BBFF"/>
     <SolidColorBrush x:Key="Canvas" Color="#22242B"/><SolidColorBrush x:Key="Surface" Color="#2C2F37"/><SolidColorBrush x:Key="Field" Color="#262930"/><SolidColorBrush x:Key="Line" Color="#424651"/>
     <Style x:Key="AppWindowStyle" TargetType="Window">
-      <Setter Property="Icon" Value="pack://application:,,,/Assets/QuotaOrb.ico"/><Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI"/><Setter Property="FontSize" Value="13"/>
+      <Setter Property="Icon" Value="pack://application:,,,/Assets/QuotaOrb.png"/><Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI"/><Setter Property="FontSize" Value="13"/>
       <Setter Property="Background" Value="{StaticResource Canvas}"/><Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="UseLayoutRounding" Value="True"/>
     </Style>
     <Style TargetType="Window" BasedOn="{StaticResource AppWindowStyle}"/>

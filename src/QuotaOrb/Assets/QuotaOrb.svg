@@ -1,7 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <title>QuotaOrb</title>
-  <circle cx="128" cy="128" r="118" fill="#22242b"/>
-  <circle cx="128" cy="128" r="81" fill="none" stroke="#414653" stroke-width="28"/>
-  <path d="M128 47 A81 81 0 1 1 47 128" fill="none" stroke="#2ed6c7" stroke-width="28" stroke-linecap="round"/>
-  <path d="M164 164 L204 204" fill="none" stroke="#85bbff" stroke-width="28" stroke-linecap="round"/>
+  <title>QuotaOrb — Q quota dial</title>
+  <desc>Original QuotaOrb mark: a white Q with a mint quota segment on a blue rounded tile.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4985FF"/>
+      <stop offset="1" stop-color="#2452D1"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="58" fill="url(#tile)"/>
+  <circle cx="120" cy="120" r="66" fill="none" stroke="#FFFFFF" stroke-width="30"/>
+  <path d="M120 54 A66 66 0 0 1 186 120" fill="none" stroke="#7CF5CF" stroke-width="30"/>
+  <path d="M163 163 L200 200" fill="none" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
 </svg>

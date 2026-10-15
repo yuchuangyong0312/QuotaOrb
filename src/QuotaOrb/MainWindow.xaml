@@ -5,7 +5,7 @@
     <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition/></Grid.ColumnDefinitions>
     <Border Background="#1C1E24" BorderBrush="#343741" BorderThickness="0,0,1,0">
       <DockPanel Margin="12,20">
-        <Image DockPanel.Dock="Top" Source="pack://application:,,,/Assets/QuotaOrb.ico" Width="30" Height="30" Margin="0,2,0,28"/>
+        <Image x:Name="BrandLogo" DockPanel.Dock="Top" Source="pack://application:,,,/Assets/QuotaOrb.png" Width="30" Height="30" Margin="0,2,0,28" RenderOptions.BitmapScalingMode="HighQuality"/>
         <Button DockPanel.Dock="Bottom" Content="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="18" ToolTip="设置" AutomationProperties.Name="设置" Click="Settings_Click" Style="{StaticResource QuietButton}" Margin="0" Padding="12"/>
         <StackPanel>
           <Border Background="#354357" CornerRadius="10" Padding="12" ToolTip="账号额度"><TextBlock Text="&#xE716;" FontFamily="Segoe MDL2 Assets" FontSize="19" Foreground="{StaticResource Accent}" HorizontalAlignment="Center"/></Border>

@@ -43,15 +43,14 @@ $shellObject = New-Object -ComObject WScript.Shell
 $installedExe = Join-Path $programDir 'QuotaOrb.exe'
 $shortcutFile = Join-Path $desktopDir '额度管理.lnk'
 $legacyShortcut = Join-Path $desktopDir '额度球.lnk'
-$preservedIcon = $null
+$preservedShortcut = $null
 foreach ($existingLink in @($shortcutFile,$legacyShortcut)) {
     Assert-NoReparsePath $existingLink
     if (Test-Path -LiteralPath $existingLink -PathType Leaf) {
-        $link = $shellObject.CreateShortcut($existingLink)
-        if ($link.TargetPath -eq $installedExe -and -not [string]::IsNullOrWhiteSpace($link.IconLocation)) {
-            $preservedIcon = $link.IconLocation
-            break
-        }
+        $existingShortcut = $shellObject.CreateShortcut($existingLink)
+        try {
+            if ($existingShortcut.TargetPath -eq $installedExe) { $preservedShortcut = $existingLink; break }
+        } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($existingShortcut) | Out-Null }
     }
 }
 $manifestFile = Join-Path $sourceDir 'checksums.json'
@@ -103,11 +102,14 @@ foreach ($relative in $obsoleteFiles) {
 }
 if ((Test-Path -LiteralPath $runtimeDirectory -PathType Container) -and -not (Get-ChildItem -LiteralPath $runtimeDirectory -Force)) { Remove-Item -LiteralPath $runtimeDirectory }
 $temporaryShortcut = Join-Path $desktopDir ('.quota-orb-'+[Guid]::NewGuid().ToString('N')+'.lnk')
+if ($preservedShortcut) { Copy-Item -LiteralPath $preservedShortcut -Destination $temporaryShortcut }
 $shortcut = $shellObject.CreateShortcut($temporaryShortcut)
-$shortcut.TargetPath = $installedExe
-$shortcut.WorkingDirectory = $programDir
-$shortcut.Description = '独立运行的 Codex 多账号额度助手'
-$shortcut.IconLocation = if ($preservedIcon) { $preservedIcon } else { $installedExe+',0' }
+if (-not $preservedShortcut) {
+    $shortcut.TargetPath = $installedExe
+    $shortcut.WorkingDirectory = $programDir
+    $shortcut.Description = '独立运行的 Codex 多账号额度助手'
+}
+$shortcut.IconLocation = $installedExe+',0'
 try {
     $shortcut.Save()
     Assert-NoReparsePath $shortcutFile

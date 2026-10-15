@@ -1,38 +1,70 @@
-# Original QuotaOrb quota-ring/Q geometry; no OS icon resources are copied.
+# Render every app icon from the original SVG. No downloaded art or OS icons.
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName PresentationCore,PresentationFramework,WindowsBase
 $root = Split-Path -Parent $PSScriptRoot
-$output = Join-Path $root 'src\QuotaOrb\Assets\QuotaOrb.ico'
-$frames = @()
-foreach ($size in @(16,24,32,48,64,128,256)) {
-    $canvas = New-Object System.Drawing.Bitmap 1024,1024
-    $graphics = [Drawing.Graphics]::FromImage($canvas)
-    $graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $graphics.ScaleTransform(4,4)
-    $background = New-Object Drawing.SolidBrush ([Drawing.ColorTranslator]::FromHtml('#22242B'))
-    $track = New-Object Drawing.Pen ([Drawing.ColorTranslator]::FromHtml('#414653')),28
-    $accent = New-Object Drawing.Pen ([Drawing.ColorTranslator]::FromHtml('#2ED6C7')),28
-    $tail = New-Object Drawing.Pen ([Drawing.ColorTranslator]::FromHtml('#85BBFF')),28
-    $accent.StartCap = $accent.EndCap = [Drawing.Drawing2D.LineCap]::Round
-    $tail.StartCap = $tail.EndCap = [Drawing.Drawing2D.LineCap]::Round
-    try {
-        $graphics.Clear([Drawing.Color]::Transparent)
-        $graphics.FillEllipse($background,10,10,236,236)
-        $graphics.DrawEllipse($track,47,47,162,162)
-        $graphics.DrawArc($accent,47,47,162,162,-90,270)
-        $graphics.DrawLine($tail,164,164,204,204)
-        $small = New-Object Drawing.Bitmap $size,$size
-        $resize = [Drawing.Graphics]::FromImage($small)
-        $stream = New-Object IO.MemoryStream
-        try {
-            $resize.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $resize.DrawImage($canvas,0,0,$size,$size)
-            $small.Save($stream,[Drawing.Imaging.ImageFormat]::Png)
-            $frames += [pscustomobject]@{Size=$size;Bytes=$stream.ToArray()}
-        } finally { $stream.Dispose(); $resize.Dispose(); $small.Dispose() }
-    } finally { $tail.Dispose(); $accent.Dispose(); $track.Dispose(); $background.Dispose(); $graphics.Dispose(); $canvas.Dispose() }
+$assetDir = Join-Path $root 'src\QuotaOrb\Assets'
+[xml]$svg = Get-Content -LiteralPath (Join-Path $assetDir 'QuotaOrb.svg') -Raw
+$culture = [Globalization.CultureInfo]::InvariantCulture
+function Number([string]$Value) { [double]::Parse($Value,$culture) }
+$brushes = @{}
+foreach ($gradient in $svg.svg.defs.linearGradient) {
+    $brush = [Windows.Media.LinearGradientBrush]::new()
+    $brush.StartPoint = [Windows.Point]::new((Number $gradient.x1),(Number $gradient.y1))
+    $brush.EndPoint = [Windows.Point]::new((Number $gradient.x2),(Number $gradient.y2))
+    foreach ($stop in $gradient.stop) {
+        $brush.GradientStops.Add([Windows.Media.GradientStop]::new([Windows.Media.ColorConverter]::ConvertFromString($stop.'stop-color'),(Number $stop.offset)))
+    }
+    $brushes[$gradient.id] = $brush
 }
-$writer = New-Object IO.BinaryWriter ([IO.File]::Create($output))
+function SvgBrush([string]$Value) {
+    if ([string]::IsNullOrEmpty($Value) -or $Value -eq 'none') { return $null }
+    if ($Value -match '^url\(#([a-zA-Z0-9_-]+)\)$') {
+        if (-not $brushes.ContainsKey($Matches[1])) { throw 'Unknown SVG gradient.' }
+        return $brushes[$Matches[1]]
+    }
+    return [Windows.Media.SolidColorBrush]::new([Windows.Media.ColorConverter]::ConvertFromString($Value))
+}
+$frames = @()
+foreach ($size in @(16,20,24,32,40,48,64,128,256)) {
+    $visual = [Windows.Media.DrawingVisual]::new()
+    $drawing = $visual.RenderOpen()
+    try {
+        $drawing.PushTransform([Windows.Media.ScaleTransform]::new($size/256.0,$size/256.0))
+        foreach ($shape in $svg.svg.ChildNodes) {
+            if ($shape.NodeType -ne [Xml.XmlNodeType]::Element -or $shape.LocalName -in @('title','desc','defs')) { continue }
+            $fill = SvgBrush $shape.GetAttribute('fill')
+            $pen = $null
+            if ($shape.HasAttribute('stroke')) {
+                $pen = [Windows.Media.Pen]::new((SvgBrush $shape.GetAttribute('stroke')),(Number $shape.GetAttribute('stroke-width')))
+                if ($shape.GetAttribute('stroke-linecap') -eq 'round') { $pen.StartLineCap = $pen.EndLineCap = [Windows.Media.PenLineCap]::Round }
+            }
+            switch ($shape.LocalName) {
+                'rect' {
+                    $bounds = [Windows.Rect]::new((Number $shape.x),(Number $shape.y),(Number $shape.width),(Number $shape.height))
+                    $radius = Number $shape.rx
+                    $drawing.DrawRoundedRectangle($fill,$pen,$bounds,$radius,$radius)
+                }
+                'circle' { $drawing.DrawEllipse($fill,$pen,[Windows.Point]::new((Number $shape.cx),(Number $shape.cy)),(Number $shape.r),(Number $shape.r)) }
+                'path' { $drawing.DrawGeometry($fill,$pen,[Windows.Media.Geometry]::Parse($shape.d)) }
+                default { throw ('Unsupported icon SVG element: '+$shape.LocalName) }
+            }
+        }
+        $drawing.Pop()
+    } finally { $drawing.Close() }
+    $bitmap = [Windows.Media.Imaging.RenderTargetBitmap]::new($size,$size,96,96,[Windows.Media.PixelFormats]::Pbgra32)
+    $bitmap.Render($visual)
+    $encoder = [Windows.Media.Imaging.PngBitmapEncoder]::new()
+    $encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap))
+    $stream = [IO.MemoryStream]::new()
+    try {
+        $encoder.Save($stream)
+        $bytes = $stream.ToArray()
+        $frames += [pscustomobject]@{Size=$size;Bytes=$bytes}
+        if ($size -eq 256) { [IO.File]::WriteAllBytes((Join-Path $assetDir 'QuotaOrb.png'),$bytes) }
+    } finally { $stream.Dispose() }
+}
+$output = Join-Path $assetDir 'QuotaOrb.ico'
+$writer = [IO.BinaryWriter]::new([IO.File]::Create($output))
 try {
     $writer.Write([uint16]0); $writer.Write([uint16]1); $writer.Write([uint16]$frames.Count)
     $offset = 6 + 16 * $frames.Count
@@ -45,4 +77,4 @@ try {
     }
     foreach ($frame in $frames) { $writer.Write([byte[]]$frame.Bytes) }
 } finally { $writer.Dispose() }
-Get-Item -LiteralPath $output | Select-Object Name,Length
+Get-Item -LiteralPath $output,(Join-Path $assetDir 'QuotaOrb.png') | Select-Object Name,Length

@@ -13,51 +13,8 @@ internal static class AppIcons
         return (Icon)icon.Clone();
     }
 
-    // Honor a user's custom desktop shortcut icon rather than replacing it on upgrades.
-    public static Icon LoadTrayIcon()
-    {
-        object? shell = null;
-        string? installedIcon = null;
-        try
-        {
-            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            var installedExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Programs","QuotaOrb","QuotaOrb.exe");
-            var shellType = Type.GetTypeFromProgID("WScript.Shell");
-            if (shellType is null) return LoadEmbedded();
-            shell = Activator.CreateInstance(shellType);
-            foreach (var path in Directory.EnumerateFiles(desktop,"*.lnk").OrderBy(p=>Path.GetFileName(p)=="额度管理.lnk"?0:1))
-            {
-                object? shortcut = null;
-                try
-                {
-                    shortcut = ((dynamic)shell!).CreateShortcut(path);
-                    var target = (string)((dynamic)shortcut).TargetPath;
-                    var location = (string)((dynamic)shortcut).IconLocation;
-                    if (string.Equals(Path.GetFullPath(target),Environment.ProcessPath,StringComparison.OrdinalIgnoreCase))
-                        return FromShortcutIcon(location) ?? LoadEmbedded();
-                    // A separately stored preview should honor the existing QuotaOrb icon
-                    // without retargeting or replacing the user's stable desktop shortcut.
-                    if (Path.GetFileName(path)=="额度管理.lnk" && string.Equals(Path.GetFullPath(target),installedExe,StringComparison.OrdinalIgnoreCase))
-                        installedIcon = location;
-                }
-                catch { }
-                finally { if (shortcut is not null && Marshal.IsComObject(shortcut)) Marshal.FinalReleaseComObject(shortcut); }
-            }
-        }
-        catch { }
-        finally { if (shell is not null && Marshal.IsComObject(shell)) Marshal.FinalReleaseComObject(shell); }
-        try { return FromShortcutIcon(installedIcon) ?? LoadEmbedded(); }
-        catch { return LoadEmbedded(); }
-    }
-
-    private static Icon? FromShortcutIcon(string? location)
-    {
-        if (string.IsNullOrWhiteSpace(location)) return null;
-        var comma = location.LastIndexOf(',');
-        var index = comma>=0 && int.TryParse(location[(comma+1)..],out var number)?number:0;
-        var file = Environment.ExpandEnvironmentVariables((comma>=0?location[..comma]:location).Trim('"'));
-        return LoadFromFile(file,index);
-    }
+    // All surfaces use the bundled brand; old Windows shortcut icons must not leak into the tray.
+    public static Icon LoadTrayIcon() => LoadEmbedded(System.Windows.Forms.SystemInformation.SmallIconSize.Width);
 
     public static Icon? LoadFromFile(string file,int index,int size = 16)
     {

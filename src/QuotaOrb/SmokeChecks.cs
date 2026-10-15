@@ -40,20 +40,33 @@ internal static class SmokeChecks
             Check("UI smoke never opens the real desktop login cache",app.DesktopSwitch is null&&!Directory.Exists(Path.Combine(root,"desktop-logins")));
             Check("desktop switch requires a saved login and live adapter",!window.AuthorizeDesktopButton.IsEnabled&&!window.SwitchDesktopButton.IsEnabled&&window.DesktopRecoveryActions.Visibility==Visibility.Collapsed);
             Check("only dashboard exists, no floating window",app.Windows.Count==1&&window.ShowInTaskbar);
-            Check("window icon is embedded",window.Icon is not null);
+            Check("window and sidebar use the high-resolution embedded logo",window.Icon is BitmapSource { PixelWidth: 256, PixelHeight: 256 }&&window.BrandLogo.Source is BitmapSource { PixelWidth: 256, PixelHeight: 256 });
             var arguments = Environment.GetCommandLineArgs();
-            var expectedIconIndex = Array.IndexOf(arguments,"--expected-icon");
-            using (var expected = expectedIconIndex>=0 && expectedIconIndex+2<arguments.Length
-                ? AppIcons.LoadFromFile(arguments[expectedIconIndex+1],int.Parse(arguments[expectedIconIndex+2]))!
-                : AppIcons.LoadTrayIcon())
+            using (var expected = AppIcons.LoadEmbedded(app.TrayIcon!.Width))
             using (var expectedBitmap = expected.ToBitmap())
             using (var trayBitmap = app.TrayIcon!.ToBitmap())
-                Check("tray matches the desktop or packaged icon",Enumerable.Range(0,16).All(x=>Enumerable.Range(0,16).All(y=>expectedBitmap.GetPixel(x,y)==trayBitmap.GetPixel(x,y))));
-            using (var embedded = AppIcons.LoadEmbedded())
-            using (var embeddedBitmap = embedded.ToBitmap())
-            using (var executableIcon = AppIcons.LoadFromFile(Environment.ProcessPath!,0)!)
-            using (var executableBitmap = executableIcon.ToBitmap())
-                Check("EXE and desktop default use the same icon",Enumerable.Range(0,16).All(x=>Enumerable.Range(0,16).All(y=>embeddedBitmap.GetPixel(x,y)==executableBitmap.GetPixel(x,y))));
+                Check("tray uses the bundled brand regardless of old shortcut icons",Enumerable.Range(0,expectedBitmap.Width).All(x=>Enumerable.Range(0,expectedBitmap.Height).All(y=>expectedBitmap.GetPixel(x,y)==trayBitmap.GetPixel(x,y))));
+            // System.Drawing.Icon's stream constructor selects at most 128px;
+            // inspect the 256px PNG frame through WPF below instead.
+            foreach (var size in new[] {16,20,24,32,40,48,64,128})
+            {
+                using var embedded = AppIcons.LoadEmbedded(size);
+                using var embeddedBitmap = embedded.ToBitmap();
+                using var executableIcon = AppIcons.LoadFromFile(Environment.ProcessPath!,0,size)!;
+                using var executableBitmap = executableIcon.ToBitmap();
+                Check($"EXE and embedded icon match at {size}px",embeddedBitmap.Width==size&&embeddedBitmap.Height==size&&executableBitmap.Width==size&&executableBitmap.Height==size&&Enumerable.Range(0,size).All(x=>Enumerable.Range(0,size).All(y=>embeddedBitmap.GetPixel(x,y)==executableBitmap.GetPixel(x,y))));
+            }
+            static byte[] Pixels(BitmapSource source)
+            {
+                var bitmap = new FormatConvertedBitmap(source,PixelFormats.Bgra32,null,0);
+                var bytes = new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];
+                bitmap.CopyPixels(bytes,bitmap.PixelWidth*4,0);
+                return bytes;
+            }
+            var iconFrames = BitmapDecoder.Create(new Uri("pack://application:,,,/Assets/QuotaOrb.ico"),BitmapCreateOptions.PreservePixelFormat,BitmapCacheOption.OnLoad).Frames;
+            Check("packaged ICO contains all Windows icon sizes",iconFrames.Select(f=>f.PixelWidth).Order().SequenceEqual(new[] {16,20,24,32,40,48,64,128,256}));
+            var brandPixels = Pixels(iconFrames.Single(f=>f.PixelWidth==256));
+            Check("window and sidebar artwork match the executable icon",brandPixels.SequenceEqual(Pixels((BitmapSource)window.Icon))&&brandPixels.SequenceEqual(Pixels((BitmapSource)window.BrandLogo.Source)));
             Check("licenses are contained in the application",typeof(App).Assembly.GetManifestResourceNames().Count(n=>n.StartsWith("QuotaOrb.Licenses."))==6);
             var settings = new SettingsWindow(app) { Owner = window };
             var settingsPanel = (StackPanel)settings.Content;
