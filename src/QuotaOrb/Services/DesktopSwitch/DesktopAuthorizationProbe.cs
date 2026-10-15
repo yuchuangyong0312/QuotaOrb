@@ -16,7 +16,7 @@ public sealed record AuthorizationCheckResult(string AccountId, string Name, Aut
     };
     public string Advice => State switch
     {
-        AuthorizationCheckState.Valid => "本次官方检查通过；额度用完仍可切换登录。",
+        AuthorizationCheckState.Valid => "",
         AuthorizationCheckState.Missing or AuthorizationCheckState.Legacy or AuthorizationCheckState.Unavailable => "请点击“授权切换登录”完成授权。",
         AuthorizationCheckState.NeedsRefresh => "凭据可能过期；可尝试切换时自动刷新，仍失败再重新授权。",
         _ => "可能是网络、请求限制或服务异常，请稍后重试；不代表授权失效。"
