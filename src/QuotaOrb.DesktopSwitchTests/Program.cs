@@ -139,7 +139,14 @@ foreach (var wrapped in new[] { false, true })
 }
 {
     var f = New(); f.Probe.Action = (_, _, _) => { f.Write(Fixture.Login("b", "renewed")); return Task.FromResult(Fixture.Quota("b", 100)); };
-    Check("exhausted target is not launched and original login is restored", await Reject(() => f.Switch()) && f.Current().SequenceEqual(f.Original) && f.Runtime.Launches == 0);
+    await f.Switch();
+    Check("exhausted target can log in to manage reset cards", f.Runtime.Launches == 1 && !f.Vault.HasPending && DesktopLogin.Inspect(f.Current()).AccountId == "account-b");
+    Check("exhausted target keeps credentials renewed during verification", f.Vault.Load(f.B.Id).SequenceEqual(Fixture.Login("b", "renewed")) && new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe).HasAuthorized(f.B));
+}
+{
+    var f = New(); f.Runtime.FailLaunch = true;
+    f.Probe.Action = (_, _, _) => { f.Write(Fixture.Login("b", "renewed")); return Task.FromResult(Fixture.Quota("b", 100)); };
+    Check("exhausted target still rolls back on an actual launch failure", await Reject(() => f.Switch()) && f.Current().SequenceEqual(f.Original) && f.Runtime.Launches == 1 && !f.Vault.HasPending);
     Check("rollback retains a target token renewed during verification", f.Vault.Load(f.B.Id).SequenceEqual(Fixture.Login("b", "renewed")));
     Check("rollback retains proof of the target's prior authorization", new DesktopSwitcher(Path.Combine(f.Root, "data"), f.Runtime, f.Probe).HasAuthorized(f.B));
 }
@@ -155,17 +162,23 @@ foreach (var wrapped in new[] { false, true })
     f.Probe.Action = (_, _, _) => Task.FromResult(Fixture.Quota("b"));
     Check("a missing selected quota pool is reported without launching", await Reject(() => f.Switcher.SwitchAsync(f.B, [f.A, f.B], "missing-pool", default)) && f.Current().SequenceEqual(f.Original) && f.Runtime.Launches == 0);
 }
-foreach (var restriction in new[] { "spend-control", "individual", "reached-type" })
+foreach (var restriction in new[] { "spend-control", "individual", "reached-type", "5h", "weekly", "ordinary-usage", "no-reset-cards" })
 {
     var f = New(); var quota = Fixture.Quota("b"); var bucket = quota.Buckets["codex"];
     quota.Buckets["codex"] = restriction switch
     {
         "spend-control" => bucket with { SpendControlReached = true },
         "individual" => bucket with { IndividualRemaining = 0 },
-        _ => bucket with { ReachedType = "synthetic-limit" }
+        "reached-type" => bucket with { ReachedType = "synthetic-limit" },
+        "5h" or "no-reset-cards" => bucket with { Primary = bucket.Primary! with { UsedPercent = 100 } },
+        "weekly" => bucket with { Secondary = bucket.Secondary! with { UsedPercent = 100 } },
+        _ => bucket
     };
+    if (restriction == "ordinary-usage") quota = quota with { OrdinaryUsageAllowed = false };
+    if (restriction == "no-reset-cards") quota = quota with { ResetCount = 0, ResetCredits = [] };
     f.Probe.Action = (_, _, _) => Task.FromResult(quota);
-    Check("server restriction blocks positive percentages: " + restriction, await Reject(() => f.Switch()) && f.Current().SequenceEqual(f.Original) && f.Runtime.Launches == 0);
+    await f.Switch();
+    Check("usage limit does not block an authenticated desktop login: " + restriction, f.Probe.Calls == 1 && f.Runtime.Launches == 1 && DesktopLogin.Inspect(f.Current()).AccountId == "account-b" && !f.Vault.HasPending);
 }
 {
     var f = New(); f.Probe.Action = (_, _, _) => throw new OperationCanceledException();

@@ -1,6 +1,6 @@
 # QuotaOrb · 额度管理
 
-Windows 桌面 Codex 多账号额度助手。**2.1.6 · MIT 开源 · Windows 10/11 x64**。
+Windows 桌面 Codex 多账号额度助手。**2.1.7 · MIT 开源 · Windows 10/11 x64**。
 
 **2.1.0 正式版**增加独立授权及桌面账号切换。账号分别授权后，从 Codex 托盘退出程序，再点击 **切换并打开 Codex** 即可切换。参见 [账号切换使用说明](docs/account-switch.md)。
 
@@ -16,6 +16,8 @@ Windows 桌面 Codex 多账号额度助手。**2.1.6 · MIT 开源 · Windows 10
 
 **2.1.6**将“全部核验”和“添加账号”移到账号数量右侧，放大添加图标；右侧账号名称移至顶部，额度授权卡片与左侧账号卡片顶边对齐。
 
+**2.1.7**修复额度耗尽时无法切换登录的问题：登录校验通过后，仍可打开 Codex 手动使用重置卡。同时将“全部核验”改为“核验所有额度”，与“添加账号”调换位置，两个按钮统一使用灰色样式。
+
 查看账号的 5 小时和每周剩余额度、官方刷新时间与重置卡数量，在使用前判断哪些账号仍有额度。
 
 这是独立社区工具，不是 OpenAI 官方产品。需要先安装 Codex；工具使用本机已安装的 Codex 后台组件，无需打开 Codex 桌面窗口，不附带 Codex 运行文件。
@@ -29,7 +31,7 @@ Windows 桌面 Codex 多账号额度助手。**2.1.6 · MIT 开源 · Windows 10
 1. 先安装 Codex，并确认网络可以访问官方服务。
 2. 点击 **添加账号**，填写名称与登录邮箱。密码、2FA 信息、订阅充值和到期时间均为可选的本地记录。
 3. 选中账号，点击 **登录授权**，在官方网页完成登录。填写密码到本工具不等于完成授权。
-4. 等待额度更新，需要时点击 **立即核验** 或 **全部核验**。
+4. 等待额度更新，需要时点击 **立即核验** 或 **核验所有额度**。
 
 授权窗口可以最小化，同时可回主窗口复制登录信息。等待时点击右上角 × 也只最小化，点击 **取消授权** 或退出整个工具才停止。遇到本机回调失败，可用 **设备码授权**；该方式可能需要先在 ChatGPT 安全设置允许设备码登录。
 
@@ -74,19 +76,19 @@ Windows 桌面 Codex 多账号额度助手。**2.1.6 · MIT 开源 · Windows 10
 dotnet run --project src/QuotaOrb.Tests -c Release
 dotnet run --project src/QuotaOrb.ServiceTests -c Release
 dotnet run --project src/QuotaOrb.DesktopSwitchTests -c Release
-dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -p:IncludeSourceRevisionInInformationalVersion=false -o dist/QuotaOrb-2.1.6
+dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -p:IncludeSourceRevisionInInformationalVersion=false -o dist/QuotaOrb-2.1.7
 ```
 
 也可运行 `scripts/bootstrap.ps1` 下载并校验官方 SDK 到项目 `.tools`，再运行 `scripts/publish.ps1` 生成包含安装脚本、许可证和校验文件的内部发布目录。
 
 安装或更新后，从受管理的终端（如 Codex）启动长期运行的工具时，使用 `scripts/start-local.ps1`。它通过现有 Windows 桌面启动，避免工具继承终端的进程作业、随宿主退出而被结束；桌面不可用时会报错，请从桌面快捷方式打开。直接双击 EXE 或桌面快捷方式也可正常使用。
 
-启动独立性回归检查可在 PowerShell 7 中运行 `scripts/test-launch-lifetime.ps1 -ExecutablePath .\dist\QuotaOrb-2.1.6\QuotaOrb.exe`。检查使用独立虚构数据，关闭模拟启动宿主及其进程作业后，要求工具仍能完成原生界面检查；加 `-LegacyStart` 可复现旧启动方式导致的失败。
+启动独立性回归检查可在 PowerShell 7 中运行 `scripts/test-launch-lifetime.ps1 -ExecutablePath .\dist\QuotaOrb-2.1.7\QuotaOrb.exe`。检查使用独立虚构数据，关闭模拟启动宿主及其进程作业后，要求工具仍能完成原生界面检查；加 `-LegacyStart` 可复现旧启动方式导致的失败。
 
 原生界面检查需安装 Codex，指定**全新独立**的测试目录：
 
 ```powershell
-.\dist\QuotaOrb-2.1.6\QuotaOrb.exe --smoke-test --skip-auth-handoff --data-root C:\Temp\QuotaOrb-Smoke-New
+.\dist\QuotaOrb-2.1.7\QuotaOrb.exe --smoke-test --skip-auth-handoff --data-root C:\Temp\QuotaOrb-Smoke-New
 ```
 
 测试仅使用虚构账号，并生成界面截图。`--skip-auth-handoff` 避免占用真实授权回调端口；省略它会在隔离目录启动并取消一个未登录的官方授权会话，不自动打开浏览器。不要指向实际账号目录。

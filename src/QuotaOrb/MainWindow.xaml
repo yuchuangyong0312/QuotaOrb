@@ -41,18 +41,18 @@
       <Grid Margin="0,0,0,24">
         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="18"/><ColumnDefinition Width="340"/></Grid.ColumnDefinitions>
         <WrapPanel VerticalAlignment="Center">
-          <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,24,0">
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0">
             <TextBlock Text="Codex 账号额度" FontSize="23" FontWeight="SemiBold" VerticalAlignment="Center"/>
             <Border Background="#363A44" CornerRadius="11" Padding="9,3" Margin="12,0,0,0" VerticalAlignment="Center"><TextBlock x:Name="AccountCount" Foreground="{StaticResource Subtle}" FontSize="12"/></Border>
           </StackPanel>
           <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-            <Button x:Name="RefreshAllButton" Content="全部核验" Click="RefreshAll_Click" Padding="16,10"/>
-            <Button Click="Add_Click" Style="{StaticResource PrimaryButton}" Margin="0" Padding="16,10" AutomationProperties.Name="添加账号">
+            <Button Click="Add_Click" Padding="16,10" AutomationProperties.Name="添加账号">
               <StackPanel Orientation="Horizontal">
                 <Path Width="14" Height="14" Data="M 7,0 L 7,14 M 0,7 L 14,7" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2" VerticalAlignment="Center" Margin="0,0,7,0"/>
                 <TextBlock Text="添加账号" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
+            <Button x:Name="RefreshAllButton" Content="核验所有额度" Click="RefreshAll_Click" Padding="16,10" Margin="0"/>
           </StackPanel>
         </WrapPanel>
         <TextBlock Grid.Column="2" x:Name="DetailName" FontSize="20" FontWeight="SemiBold" Text="选择一个账号" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" VerticalAlignment="Center" Margin="0,0,8,0"/>

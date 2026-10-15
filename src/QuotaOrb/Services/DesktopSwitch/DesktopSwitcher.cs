@@ -174,12 +174,10 @@ public sealed class DesktopSwitcher
                 vault.SavePending(journal);
             }
             finally { Clear(refreshed); }
-            if (!quota.Buckets.TryGetValue(pool, out var bucket))
+            if (!quota.Buckets.ContainsKey(pool))
                 throw new InvalidDataException("官方未返回当前额度池的信息，已停止启动。请先核验账号额度。");
-            if (quota.OrdinaryUsageAllowed == false || !string.IsNullOrEmpty(bucket.ReachedType)
-                || bucket.SpendControlReached == true || bucket.IndividualRemaining is <= 0
-                || bucket.ForDuration(300)?.Remaining <= 0 || bucket.ForDuration(10080)?.Remaining <= 0)
-                throw new InvalidOperationException("目标账号当前不可用或额度已用完，未打开 Codex，请选择其他账号。");
+            // Usage limits restrict model requests, not signing in. An authenticated
+            // account must remain accessible so the user can manage its reset cards.
             token.ThrowIfCancellationRequested();
             runtime.RequireStopped();
             journal = journal with { Stage = "launching" }; vault.SavePending(journal);
