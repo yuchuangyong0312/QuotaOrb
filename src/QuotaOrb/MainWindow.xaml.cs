@@ -19,6 +19,9 @@ public partial class MainWindow : Window
     private LoginWindow? loginWindow;
     private ContextMenu? resetCreditsMenu;
     private string? resetCreditsAccountId;
+    private CancellationTokenSource? authorizationCheckCancellation;
+    private readonly HashSet<string> pendingAuthorizationChecks = new(StringComparer.Ordinal);
+    private string? authorizationCheckProgress;
     private AccountRecord? Selected => Service.Data.Accounts.FirstOrDefault(a => a.Id == selectedId);
     public MainWindow(App app)
     {
@@ -60,7 +63,9 @@ public partial class MainWindow : Window
         AccountCount.Text = $"{rows.Count} 个账号";
         EmptyLabel.Text = Service.ComponentAvailable ? "还没有账号\n\n点击右上角“添加账号”，再完成官方登录授权。" : CodexInstallation.MissingMessage;
         RefreshAllButton.IsEnabled = !Service.Busy;
-        CheckAuthorizationsButton.IsEnabled = !Service.Busy && app.DesktopSwitch is { HasPending: false } && rows.Count > 0;
+        CheckAuthorizationsButton.Content = authorizationCheckCancellation is null ? "检查切换授权" : "取消检查";
+        CheckAuthorizationsButton.IsEnabled = authorizationCheckCancellation is { IsCancellationRequested: false }
+            || (authorizationCheckCancellation is null && !Service.Busy && app.DesktopSwitch is { HasPending: false } && rows.Count > 0);
         StoragePanel.Visibility = Service.StorageError is null ? Visibility.Collapsed : Visibility.Visible;
         StorageMessage.Text = Service.StorageError ?? "";
         RetrySaveButton.IsEnabled = !Service.Busy;
@@ -132,6 +137,9 @@ public partial class MainWindow : Window
         DetailPanel.IsEnabled = a is not null || pending;
         var authorized = a is not null && desktop?.HasAuthorized(a) == true;
         DesktopAuthorizationMessage.Text = app.DesktopSwitchError ?? desktop?.GetAuthorizationMessage(a) ?? "界面测试模式不会读取或改动真实 Codex 登录。";
+        if (a is not null && pendingAuthorizationChecks.Contains(a.Id)) DesktopAuthorizationMessage.Text = $"「{a.Name}」等待本次授权检查结果…";
+        DesktopCheckProgress.Text = authorizationCheckProgress ?? "";
+        DesktopCheckProgress.Visibility = string.IsNullOrEmpty(authorizationCheckProgress) ? Visibility.Collapsed : Visibility.Visible;
         DesktopSwitchMessage.Text = desktop?.GetOperationMessage(a) ?? "";
         DesktopSwitchMessage.Visibility = string.IsNullOrEmpty(DesktopSwitchMessage.Text) ? Visibility.Collapsed : Visibility.Visible;
         AuthorizeDesktopButton.IsEnabled = loginWindow is not null || (a is not null && desktop is not null && !pending && !Service.Busy);
@@ -246,16 +254,45 @@ public partial class MainWindow : Window
         try { await Service.RefreshAllAsync(true); }
         catch { Inform("核验暂未完成，请稍后重试。"); }
     }
-    private void CheckAuthorizations_Click(object sender, RoutedEventArgs e)
+    private async void CheckAuthorizations_Click(object sender, RoutedEventArgs e)
     {
+        if (authorizationCheckCancellation is { } cancellation) { cancellation.Cancel(); Render(); return; }
         if (app.DesktopSwitch is not { } desktop || Service.Busy || desktop.HasPending || Service.Data.Accounts.Count == 0) return;
         var accounts = Service.Data.Accounts.ToArray();
-        new AuthorizationCheckWindow(accounts, (report, token) => Service.RunDesktopOperationAsync(null, async shutdown =>
+        await RunAuthorizationChecksAsync(accounts, (report, token) => Service.RunDesktopOperationAsync(null, async shutdown =>
         {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, shutdown);
             await desktop.CheckAllAuthorizationsAsync(accounts, report, linked.Token);
-        })) { Owner = this }.ShowDialog();
+        }));
+    }
+    internal async Task RunAuthorizationChecksAsync(IReadOnlyList<AccountRecord> accounts, Func<Action<AuthorizationCheckResult>, CancellationToken, Task> run)
+    {
+        if (authorizationCheckCancellation is not null) return;
+        using var cancellation = new CancellationTokenSource();
+        authorizationCheckCancellation = cancellation;
+        pendingAuthorizationChecks.UnionWith(accounts.Select(a => a.Id));
+        var completed = 0;
+        authorizationCheckProgress = $"正在检查所有账号：0 / {accounts.Count}";
         Render();
+        try
+        {
+            await run(result =>
+            {
+                pendingAuthorizationChecks.Remove(result.AccountId);
+                completed++;
+                authorizationCheckProgress = $"正在检查所有账号：{completed} / {accounts.Count}";
+                RenderDetails();
+            }, cancellation.Token);
+            authorizationCheckProgress = null;
+        }
+        catch (OperationCanceledException) { authorizationCheckProgress = $"检查已取消，已检查 {completed} / {accounts.Count} 个账号。"; }
+        catch { authorizationCheckProgress = $"检查未完成，已检查 {completed} / {accounts.Count} 个账号，请稍后重试。"; }
+        finally
+        {
+            pendingAuthorizationChecks.Clear();
+            authorizationCheckCancellation = null;
+            Render();
+        }
     }
     private void RetrySave_Click(object sender, RoutedEventArgs e) { if (!Service.Busy) Service.Save(); }
     private void Settings_Click(object sender, RoutedEventArgs e) => new SettingsWindow(app) { Owner = this }.ShowDialog();

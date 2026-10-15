@@ -232,7 +232,7 @@ internal static class SmokeChecks
             Check("periodic rendering preserves account scroll position",previousOffset>0&&Math.Abs(accountScroll.VerticalOffset-previousOffset)<1);
             var editor=new AccountEditor(new AccountRecord(),true){Owner=window};editor.Show();editor.UpdateLayout();Capture(editor,Path.Combine(root,"editor.png"));editor.Close();
             var appearanceSettings=new SettingsWindow(app){Owner=window};appearanceSettings.Show();appearanceSettings.UpdateLayout();Capture(appearanceSettings,Path.Combine(root,"settings.png"));appearanceSettings.Close();
-            await CheckAuthorizationWindowAsync(window, root, Check);
+            await CheckAuthorizationInlineAsync(app, window, root, Check);
             await CheckLoginWindowAsync(window, root, Check);
             var accounts=app.Service.Data.Accounts.ToList();
             try
@@ -250,25 +250,31 @@ internal static class SmokeChecks
         catch(Exception e){File.WriteAllText(Path.Combine(root,"result.json"),JsonSerializer.Serialize(new{success=false,error=e.ToString(),checks}));}
         finally{app.Quit();}
     }
-    private static async Task CheckAuthorizationWindowAsync(MainWindow window, string root, Action<string,bool> check)
+    private static async Task CheckAuthorizationInlineAsync(App app, MainWindow window, string root, Action<string,bool> check)
     {
-        var accounts = new[] { new AccountRecord { Name = "检查通过示例" }, new AccountRecord { Name = "需要更新示例" }, new AccountRecord { Name = "暂时无法确认示例" }, new AccountRecord { Name = "尚未授权示例" } };
-        var states = new[] { AuthorizationCheckState.Valid, AuthorizationCheckState.NeedsRefresh, AuthorizationCheckState.Unconfirmed, AuthorizationCheckState.Missing };
-        var dialog = new AuthorizationCheckWindow(accounts, (report, _) =>
-        {
-            for (var i = 0; i < accounts.Length; i++) report(new(accounts[i].Id, accounts[i].Name, states[i], DateTimeOffset.UtcNow));
-            return Task.CompletedTask;
-        }) { Owner = window };
-        dialog.Show(); await dialog.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
-        check("batch result dialog shows all accounts and accurate summary", dialog.Progress.Text.Contains("4 个账号，1 个通过") && dialog.Results.Count == 4 && dialog.Results[accounts[1].Id].Text.Contains("可能过期"));
-        dialog.UpdateLayout(); Capture(dialog, Path.Combine(root, "authorization-checks.png")); dialog.Close();
+        var accounts = app.Service.Data.Accounts.ToArray();
+        var windowCount = app.Windows.Count;
         var entered = new TaskCompletionSource();
-        var cancelled = new AuthorizationCheckWindow(accounts, async (_, token) => { entered.SetResult(); await Task.Delay(Timeout.Infinite, token); }) { Owner = window };
-        cancelled.Show(); await entered.Task;
-        cancelled.CloseButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await cancelled.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
-        check("cancelling a batch retains incomplete results and permits closing", cancelled.Progress.Text.Contains("已取消") && cancelled.Results.Values.All(r => r.Text == "本次未检查") && cancelled.CloseButton.IsEnabled);
-        cancelled.Close();
+        var attempt = window.RunAuthorizationChecksAsync(accounts, (report, token) => app.Service.RunDesktopOperationAsync(null, async _ =>
+        {
+            report(new(accounts[0].Id, accounts[0].Name, AuthorizationCheckState.Valid, DateTimeOffset.UtcNow));
+            entered.SetResult(); await Task.Delay(Timeout.Infinite, token);
+        }));
+        await entered.Task;
+        check("batch authorization check runs inline without opening a dialog", app.Windows.Count == windowCount && window.IsEnabled && window.DesktopCheckProgress.Text.Contains("1 / 5") && !window.RefreshAllButton.IsEnabled);
+        var next = window.AccountsGrid.Items.OfType<AccountRow>().First(r => r.Record.Id == accounts[1].Id);
+        window.AccountsGrid.SelectedItem = next;
+        check("account selection remains available during a batch and shows its own pending status", window.DetailName.Text == next.Name && window.DesktopAuthorizationMessage.Text.Contains(next.Name) && window.DesktopAuthorizationMessage.Text.Contains("等待本次"));
+        window.UpdateLayout(); Capture(window, Path.Combine(root, "authorization-checks-inline.png"));
+        window.CheckAuthorizationsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await attempt;
+        check("same header button cancels the batch without a popup and releases exclusivity", !app.Service.Busy && app.Windows.Count == windowCount && window.DesktopCheckProgress.Text.Contains("已取消") && (string)window.CheckAuthorizationsButton.Content == "检查切换授权");
+        await window.RunAuthorizationChecksAsync(accounts, (report, _) =>
+        {
+            foreach (var account in accounts) report(new(account.Id, account.Name, AuthorizationCheckState.Valid, DateTimeOffset.UtcNow));
+            return Task.CompletedTask;
+        });
+        check("completed batch clears temporary progress without opening another window", window.DesktopCheckProgress.Visibility == Visibility.Collapsed && app.Windows.Count == windowCount);
     }
     private static async Task CheckLoginWindowAsync(MainWindow window, string root, Action<string,bool> check)
     {
