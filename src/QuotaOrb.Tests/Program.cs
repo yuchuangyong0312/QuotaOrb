@@ -49,6 +49,13 @@ using var swapped = JsonDocument.Parse("""
 var parsed = QuotaParser.Parse(swapped.RootElement, now);
 Check("window semantics use duration, not order", parsed.Buckets["codex"].ForDuration(300)?.Remaining == 93);
 Check("total credits not inferred from detail count", parsed.ResetCount == 8 && parsed.ResetCredits?.Count == 1);
+using var resetDetails = JsonDocument.Parse("""
+{"rateLimitResetCredits":{"availableCount":3,"credits":[{"id":"later","status":"available","expiresAt":1794000000},{"id":"earlier","status":"available","expiresAt":1793000000},{"id":"unknown","status":"available","expiresAt":null},{"id":"invalid","status":"used","expiresAt":9223372036854775807}]}}
+""");
+var resetSnapshot = QuotaParser.Parse(resetDetails.RootElement, now);
+Check("individual reset expiry timestamps are preserved", resetSnapshot.ResetCredits is { Count: 4 } details && details[0].ExpiresAt == DateTimeOffset.FromUnixTimeSeconds(1794000000) && details[1].ExpiresAt == DateTimeOffset.FromUnixTimeSeconds(1793000000));
+Check("unknown and invalid reset expiry stay unknown", resetSnapshot.ResetCredits![2].ExpiresAt is null && resetSnapshot.ResetCredits[3].ExpiresAt is null);
+Check("credit status and official count remain distinct from detail list", resetSnapshot.ResetCount == 3 && resetSnapshot.ResetCredits![3].Status == "used");
 using var malformed = JsonDocument.Parse("{\"rateLimits\":{\"primary\":{\"usedPercent\":-2,\"windowDurationMins\":300,\"resetsAt\":9223372036854775807}}}");
 var invalid = QuotaParser.Parse(malformed.RootElement, now).Buckets["codex"].Primary;
 Check("negative usage never becomes full balance", invalid?.Remaining is null);

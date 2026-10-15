@@ -78,6 +78,18 @@ public partial class MainWindow : Window
         return null;
     }
 
+    private void ResetCredits_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: AccountRow row, ContextMenu: { } menu } button)
+        {
+            menu.DataContext = row;
+            menu.PlacementTarget = button;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+            e.Handled = true;
+        }
+    }
+
     private void RenderDetails()
     {
         var a = Selected;
@@ -234,6 +246,8 @@ public sealed class AccountRow
     public string Email => string.IsNullOrEmpty(Record.Email) ? "尚未授权" : Record.Email;
     public string Plan => Record.Plan is "unknown" or "" ? "未授权" : Record.Plan.ToUpperInvariant();
     public string Credits => Record.Snapshot?.ResetCount is { } count ? $"重置卡 {count} 张" : "重置卡 未知";
+    public IReadOnlyList<ResetCreditExpiryRow> CreditExpiryRows { get; }
+    public string CreditExpiryNotice { get; }
     public double? ShortRemaining { get; }
     public double? WeekRemaining { get; }
     public string ShortReset { get; }
@@ -249,6 +263,19 @@ public sealed class AccountRow
     public AccountRow(AccountRecord account, string pool, DateTimeOffset now, bool busy)
     {
         Record = account; Decision = QuotaPolicy.Evaluate(account, pool, now);
+        var availableCredits = account.Snapshot?.ResetCredits?
+            .Where(c => string.Equals(c.Status, "available", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(c => c.ExpiresAt ?? DateTimeOffset.MaxValue).ToList() ?? [];
+        CreditExpiryRows = availableCredits.Select((c, i) => new ResetCreditExpiryRow($"第 {i + 1} 张",
+            c.ExpiresAt is { } expiry ? expiry.ToLocalTime().ToString("yyyy/MM/dd HH:mm") : "到期时间待官方返回")).ToList();
+        CreditExpiryNotice = account.Snapshot?.ResetCount switch
+        {
+            0 when availableCredits.Count == 0 => "暂无可用重置卡。",
+            { } count when count > availableCredits.Count => $"官方显示剩余 {count} 张，目前仅返回 {availableCredits.Count} 张的到期明细。",
+            { } count when count < availableCredits.Count => "张数与明细暂不一致，请点击“立即核验”。",
+            null => "官方暂未返回完整的重置卡数量与到期明细。",
+            _ => ""
+        };
         var bucket = account.Snapshot?.Buckets.GetValueOrDefault(pool);
         var s = bucket?.ForDuration(300)?.Remaining; var w = bucket?.ForDuration(10080)?.Remaining;
         ShortRemaining = s; WeekRemaining = w;
@@ -261,3 +288,5 @@ public sealed class AccountRow
         StatusBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(busy ? "#85BBFF" : Decision.CanRecommend ? "#8ED3B2" : Decision.State is Availability.Exhausted or Availability.PendingReset ? "#E7BA8C" : "#B0B7C5"));
     }
 }
+
+public sealed record ResetCreditExpiryRow(string Label, string Expires);

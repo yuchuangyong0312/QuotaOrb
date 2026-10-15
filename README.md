@@ -1,10 +1,12 @@
 # QuotaOrb · 额度管理
 
-Windows 桌面 Codex 多账号额度助手。**2.1.1 · MIT 开源 · Windows 10/11 x64**。
+Windows 桌面 Codex 多账号额度助手。**2.1.2 · MIT 开源 · Windows 10/11 x64**。
 
 **2.1.0 正式版**增加独立授权及桌面账号切换。账号分别授权后，从 Codex 托盘退出程序，再点击 **切换并打开 Codex** 即可切换。参见 [账号切换使用说明](docs/account-switch.md)。
 
 **2.1.1**使用原创蓝色 Q 额度标识，统一软件界面、窗口、桌面快捷方式、任务栏和托盘图标。
+
+**2.1.2**增加逐张重置卡到期明细。卡片底部的重置卡数量与上次同步对齐，点击右侧 **▼** 查看每张可用卡的到期日期和时间，按本机时区显示、临近到期优先。缺少明细或到期时间时会明确提示。
 
 查看账号的 5 小时和每周剩余额度、官方刷新时间与重置卡数量，在使用前判断哪些账号仍有额度。
 
@@ -28,7 +30,7 @@ Windows 桌面 Codex 多账号额度助手。**2.1.1 · MIT 开源 · Windows 10
 ## 功能
 
 - 多账号卡片：5h / 每周剩余百分比、刷新时刻、上次同步和额度状态。
-- 官方返回的重置卡数量，只读展示，不自动消费。
+- 官方返回的重置卡数量及逐张到期时间，只读展示，不自动消费；明细以最近一次核验为准。
 - 展开窗口每 **15 分钟**核验，后台或最小化每 **30 分钟**核验；支持手动核验和失败退避。
 - 休眠、断网、过期快照与授权失效分别处理，不凭时间流逝把余额改成 100%。
 - 账号名称、订阅日期时间、邮箱、密码、2FA 网址和密钥的管理与复制。
@@ -64,7 +66,7 @@ Windows 桌面 Codex 多账号额度助手。**2.1.1 · MIT 开源 · Windows 10
 dotnet run --project src/QuotaOrb.Tests -c Release
 dotnet run --project src/QuotaOrb.ServiceTests -c Release
 dotnet run --project src/QuotaOrb.DesktopSwitchTests -c Release
-dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -p:IncludeSourceRevisionInInformationalVersion=false -o dist/QuotaOrb-2.1.1
+dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -p:IncludeSourceRevisionInInformationalVersion=false -o dist/QuotaOrb-2.1.2
 ```
 
 也可运行 `scripts/bootstrap.ps1` 下载并校验官方 SDK 到项目 `.tools`，再运行 `scripts/publish.ps1` 生成包含安装脚本、许可证和校验文件的内部发布目录。
@@ -72,7 +74,7 @@ dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contain
 原生界面检查需安装 Codex，指定**全新独立**的测试目录：
 
 ```powershell
-.\dist\QuotaOrb-2.1.1\QuotaOrb.exe --smoke-test --skip-auth-handoff --data-root C:\Temp\QuotaOrb-Smoke-New
+.\dist\QuotaOrb-2.1.2\QuotaOrb.exe --smoke-test --skip-auth-handoff --data-root C:\Temp\QuotaOrb-Smoke-New
 ```
 
 测试仅使用虚构账号，并生成界面截图。`--skip-auth-handoff` 避免占用真实授权回调端口；省略它会在隔离目录启动并取消一个未登录的官方授权会话，不自动打开浏览器。不要指向实际账号目录。

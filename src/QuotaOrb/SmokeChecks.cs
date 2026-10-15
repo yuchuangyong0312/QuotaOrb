@@ -19,7 +19,7 @@ internal static class SmokeChecks
             Name=name,Email=email,Plan="plus",AuthState="ready",ProtectedPassword=SecretVault.Protect("test-only-no-real-secret"),
             ProtectedTwoFactorUrl=SecretVault.ProtectTwoFactorUrl("https://2fa.example.invalid/"),ProtectedTwoFactorKey=SecretVault.ProtectTwoFactorKey("JBSWY3DPEHPK3PXP"),LoginInfoInitialized=true,
             RechargeDate=new DateOnly(2026,9,1),SubscriptionDate=new DateOnly(2026,10,1),Notes="Synthetic-private-note；独立运行测试数据，未连接真实账号。",LastSuccessUtc=now,
-            Snapshot=new(now,"test-"+email,allowed,new(){["codex"]=new("codex",null,"plus",new(s,300,now.AddHours(2)),new(w,10080,now.AddDays(2)),null,null,null)},2,[new("test-card","available","codexRateLimits",now.AddDays(1),"重置卡")])
+            Snapshot=new(now,"test-"+email,allowed,new(){["codex"]=new("codex",null,"plus",new(s,300,now.AddHours(2)),new(w,10080,now.AddDays(2)),null,null,null)},2,[new("later-card","available","codexRateLimits",now.AddDays(3),"重置卡"),new("earlier-card","available","codexRateLimits",now.AddDays(1),"重置卡")])
         };
         service.Data.Accounts.Add(Make("备用 B","backup-b@example.com",8,24));
         service.Data.Accounts.Add(Make("开发主号","main-a@example.com",100,36));
@@ -129,6 +129,39 @@ internal static class SmokeChecks
             var firstCard=(FrameworkElement)window.AccountsGrid.ItemContainerGenerator.ContainerFromIndex(0);
             var secondCard=(FrameworkElement)window.AccountsGrid.ItemContainerGenerator.ContainerFromIndex(1);
             Check("wide view shows two cards per row",Math.Abs(firstCard.TranslatePoint(new Point(),window.AccountsGrid).Y-secondCard.TranslatePoint(new Point(),window.AccountsGrid).Y)<1);
+            static T CardElement<T>(FrameworkElement card, string name) where T : FrameworkElement
+            {
+                var presenter=MainWindow.FindVisualChild<ContentPresenter>(card)!;
+                return (T)presenter.ContentTemplate.FindName(name,presenter);
+            }
+            static bool FooterAligned(FrameworkElement card)
+            {
+                var sync=CardElement<TextBlock>(card,"LastSyncText");
+                var count=CardElement<TextBlock>(card,"CreditsText");
+                var syncCenter=sync.TranslatePoint(new Point(0,sync.ActualHeight/2),card);
+                var countCenter=count.TranslatePoint(new Point(0,count.ActualHeight/2),card);
+                return Math.Abs(syncCenter.Y-countCenter.Y)<1 && syncCenter.X+sync.ActualWidth<=countCenter.X;
+            }
+            Check("reset count shares the sync line without overlap",FooterAligned(firstCard));
+            var creditsButton=CardElement<Button>(firstCard,"ResetCreditsButton");
+            creditsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await app.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ContextIdle);
+            var creditMenu=creditsButton.ContextMenu;
+            creditMenu.UpdateLayout();
+            var creditRow=(AccountRow)firstCard.DataContext;
+            Check("reset dropdown opens for its own account",creditMenu.IsOpen&&ReferenceEquals(creditMenu.DataContext,creditRow)&&ReferenceEquals(creditMenu.PlacementTarget,creditsButton));
+            Check("reset dates use each official expiry sorted in local time",creditRow.CreditExpiryRows.Count==2&&creditRow.CreditExpiryRows[0].Expires==creditRow.Record.Snapshot!.ResetCredits![1].ExpiresAt!.Value.ToLocalTime().ToString("yyyy/MM/dd HH:mm")&&creditRow.CreditExpiryRows[1].Expires==creditRow.Record.Snapshot.ResetCredits[0].ExpiresAt!.Value.ToLocalTime().ToString("yyyy/MM/dd HH:mm")&&creditRow.CreditExpiryNotice=="");
+            var menuBitmap=new RenderTargetBitmap((int)Math.Ceiling(creditMenu.ActualWidth),(int)Math.Ceiling(creditMenu.ActualHeight),96,96,PixelFormats.Pbgra32);
+            menuBitmap.Render(creditMenu);
+            var menuEncoder=new PngBitmapEncoder();menuEncoder.Frames.Add(BitmapFrame.Create(menuBitmap));
+            using(var image=File.Create(Path.Combine(root,"reset-credits.png")))menuEncoder.Save(image);
+            creditMenu.IsOpen=false;
+            var snapshot=creditRow.Record.Snapshot!;
+            AccountRow CreditsRow(int? count,List<ResetCredit>? credits)=>new(new AccountRecord{Snapshot=snapshot with{ResetCount=count,ResetCredits=credits}},"codex",DateTimeOffset.UtcNow,false);
+            var partialCredits=CreditsRow(3,[new("unknown","available",null,null,null),new("used","used",null,DateTimeOffset.UtcNow,null)]);
+            Check("used cards excluded and missing expiry never invented",partialCredits.CreditExpiryRows.Count==1&&partialCredits.CreditExpiryRows[0].Expires=="到期时间待官方返回"&&partialCredits.CreditExpiryNotice.Contains("剩余 3 张")&&partialCredits.CreditExpiryNotice.Contains("仅返回 1 张"));
+            Check("zero cards and unavailable details have distinct messages",CreditsRow(0,[]).CreditExpiryNotice=="暂无可用重置卡。"&&CreditsRow(null,null).CreditExpiryNotice.Contains("暂未返回")&&CreditsRow(2,null).CreditExpiryNotice.Contains("仅返回 0 张"));
+            Check("inconsistent reset count is disclosed",CreditsRow(0,snapshot.ResetCredits).CreditExpiryNotice.Contains("暂不一致"));
             Capture(window,Path.Combine(root,"window.png"));
             Check("login password and 2FA fields display plaintext",window.PasswordDisplay.Text==plain&&window.TwoFactorUrlDisplay.Text=="https://2fa.example.invalid/"&&window.TwoFactorKeyDisplay.Text=="JBSWY3DPEHPK3PXP");
             Check("each copy button targets its own complete login value",ReferenceEquals(window.CopyEmailButton.Tag,window.EmailDisplay)&&ReferenceEquals(window.CopyPasswordButton.Tag,window.PasswordDisplay)&&ReferenceEquals(window.CopyTwoFactorUrlButton.Tag,window.TwoFactorUrlDisplay)&&ReferenceEquals(window.CopyTwoFactorKeyButton.Tag,window.TwoFactorKeyDisplay)&&(string)window.TwoFactorKeyDisplay.Tag=="JBSWY3DPEHPK3PXP");
@@ -145,6 +178,7 @@ internal static class SmokeChecks
             await app.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ContextIdle);
             window.UpdateLayout();Capture(window,Path.Combine(root,"window-narrow.png"));
             Check("narrow view fits account cards",window.AccountsGrid.Items.Cast<AccountRow>().All(row=>window.AccountsGrid.ItemContainerGenerator.ContainerFromItem(row) is not FrameworkElement item || item.ActualWidth<=window.AccountsGrid.ActualWidth));
+            Check("narrow reset footer stays aligned without overlap",FooterAligned((FrameworkElement)window.AccountsGrid.ItemContainerGenerator.ContainerFromIndex(0)));
             var accountScroll=MainWindow.FindVisualChild<ScrollViewer>(window.AccountsGrid)!;
             accountScroll.ScrollToVerticalOffset(220);window.UpdateLayout();
             var previousOffset=accountScroll.VerticalOffset;
