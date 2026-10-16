@@ -9,14 +9,20 @@ if (args.Contains("app-server")) { await AuthorizationChecks.RunRpcHelperAsync()
 
 if (args.Contains("--inspect-local-read-only"))
 {
-    var runtime = new WindowsDesktopRuntime(new CodexInstallation());
-    await runtime.ValidateAsync(CancellationToken.None);
-    var bytes = new DesktopAuthFile(runtime.Home).Read();
-    try { DesktopLogin.Inspect(bytes); Console.WriteLine("PASS: installed desktop version and local login format are supported (read only)"); }
-    finally { CryptographicOperations.ZeroMemory(bytes); }
-    var blocked = false;
-    try { runtime.RequireStopped(); } catch (InvalidOperationException) { blocked = true; }
-    Console.WriteLine("Running desktop blocks mutation: " + blocked);
+    try { await LocalCompatibilityChecks.RunAsync(); }
+    catch (Exception error) { Console.Error.WriteLine("FAIL: " + error.Message); Environment.ExitCode = 1; }
+    return;
+}
+if (args.Contains("--inspect-isolated-protocol"))
+{
+    try { await LocalCompatibilityChecks.CheckIsolatedProtocolAsync(); }
+    catch (Exception error) { Console.Error.WriteLine("FAIL: " + error.Message); Environment.ExitCode = 1; }
+    return;
+}
+if (args.Contains("--inspect-live-access-read-only"))
+{
+    try { await LocalCompatibilityChecks.CheckLiveAccessReadOnlyAsync(); }
+    catch (Exception error) { Console.Error.WriteLine("FAIL: " + error.Message); Environment.ExitCode = 1; }
     return;
 }
 
