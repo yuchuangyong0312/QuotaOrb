@@ -1,6 +1,6 @@
 # QuotaOrb · 额度管理
 
-Windows 桌面 Codex 多账号额度助手。**2.1.11 · MIT 开源 · Windows 10/11 x64**。
+Windows 桌面 Codex 多账号额度助手。**2.1.12 · MIT 开源 · Windows 10/11 x64**。
 
 **2.1.0 正式版**增加独立授权及桌面账号切换。账号分别授权后，从 Codex 托盘退出程序，再点击 **切换并打开 Codex** 即可切换。参见 [账号切换使用说明](docs/account-switch.md)。
 
@@ -22,7 +22,7 @@ Windows 桌面 Codex 多账号额度助手。**2.1.11 · MIT 开源 · Windows 1
 
 **2.1.9–2.1.10**将所有账号切换授权检查改为后台执行，不再弹窗，并精简重复提示。进度及各账号结果直接显示在右侧“登录授权与切换”模块，检查期间可选择其他账号查看，或点击顶部“取消检查”。
 
-**2.1.11**补充 Codex 桌面 `26.1013.3656.0` 和查询组件 `0.163.0-alpha.10.2` 的兼容范围，修复 Codex 升级后被旧版本列表拦截切换的问题。
+**2.1.12**补充当前 Codex 桌面 `26.1013.4894.0` 和查询组件 `0.163.0-alpha.10.2` 的兼容范围，修复 Codex 升级后被旧版本列表误拦截切换的问题。
 
 查看账号的 5 小时和每周剩余额度、官方刷新时间与重置卡数量，在使用前判断哪些账号仍有额度。
 
@@ -82,19 +82,19 @@ Windows 桌面 Codex 多账号额度助手。**2.1.11 · MIT 开源 · Windows 1
 dotnet run --project src/QuotaOrb.Tests -c Release
 dotnet run --project src/QuotaOrb.ServiceTests -c Release
 dotnet run --project src/QuotaOrb.DesktopSwitchTests -c Release
-dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -p:IncludeSourceRevisionInInformationalVersion=false -o dist/QuotaOrb-2.1.11
+dotnet publish src/QuotaOrb/QuotaOrb.csproj -c Release -r win-x64 --self-contained true -p:RestoreLockedMode=true -p:IncludeSourceRevisionInInformationalVersion=false -o dist/QuotaOrb-2.1.12
 ```
 
 也可运行 `scripts/bootstrap.ps1` 下载并校验官方 SDK 到项目 `.tools`，再运行 `scripts/publish.ps1` 生成包含安装脚本、许可证和校验文件的内部发布目录。
 
 安装或更新后，从受管理的终端（如 Codex）启动长期运行的工具时，使用 `scripts/start-local.ps1`。它通过现有 Windows 桌面启动，避免工具继承终端的进程作业、随宿主退出而被结束；桌面不可用时会报错，请从桌面快捷方式打开。直接双击 EXE 或桌面快捷方式也可正常使用。
 
-启动独立性回归检查可在 PowerShell 7 中运行 `scripts/test-launch-lifetime.ps1 -ExecutablePath .\dist\QuotaOrb-2.1.11\QuotaOrb.exe`。检查使用独立虚构数据，关闭模拟启动宿主及其进程作业后，要求工具仍能完成原生界面检查；加 `-LegacyStart` 可复现旧启动方式导致的失败。
+启动独立性回归检查可在 PowerShell 7 中运行 `scripts/test-launch-lifetime.ps1 -ExecutablePath .\dist\QuotaOrb-2.1.12\QuotaOrb.exe`。检查使用独立虚构数据，关闭模拟启动宿主及其进程作业后，要求工具仍能完成原生界面检查；加 `-LegacyStart` 可复现旧启动方式导致的失败。
 
 原生界面检查需安装 Codex，指定**全新独立**的测试目录：
 
 ```powershell
-.\dist\QuotaOrb-2.1.11\QuotaOrb.exe --smoke-test --skip-auth-handoff --data-root C:\Temp\QuotaOrb-Smoke-New
+.\dist\QuotaOrb-2.1.12\QuotaOrb.exe --smoke-test --skip-auth-handoff --data-root C:\Temp\QuotaOrb-Smoke-New
 ```
 
 测试仅使用虚构账号，并生成界面截图。`--skip-auth-handoff` 避免占用真实授权回调端口；省略它会在隔离目录启动并取消一个未登录的官方授权会话，不自动打开浏览器。不要指向实际账号目录。

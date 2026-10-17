@@ -10,7 +10,7 @@ public sealed class WindowsDesktopRuntime : IDesktopRuntime
     private string? applicationId;
     public string Home => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
     private const string Family = "OpenAI.Codex_2p2nqsd0c76g0";
-    private static readonly HashSet<string> SupportedVersions = ["26.1007.2314.0", "26.1007.9446.0", "26.1013.3656.0"];
+    private static readonly HashSet<string> SupportedVersions = ["26.1007.2314.0", "26.1007.9446.0", "26.1013.3656.0", "26.1013.4894.0"];
     public WindowsDesktopRuntime(CodexInstallation installation) => this.installation = installation;
 
     public async Task ValidateAsync(CancellationToken token)
