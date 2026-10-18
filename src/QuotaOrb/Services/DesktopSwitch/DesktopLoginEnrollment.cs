@@ -73,23 +73,7 @@ public sealed class DesktopLoginEnrollment
 
     private void DeleteAttempt(string directory)
     {
-        var full = Path.GetFullPath(directory);
-        if (!string.Equals(Path.GetDirectoryName(full), root, StringComparison.OrdinalIgnoreCase)
-            || !Guid.TryParseExact(Path.GetFileName(full), "N", out _))
-            throw new IOException("临时授权目录无法验证，已停止清理。");
-        SwitchFiles.CheckPath(full);
-        if (!Directory.Exists(full)) return;
-        // Reject links before recursion, including links below the verified root.
-        void CheckTree(string path)
-        {
-            foreach (var entry in Directory.EnumerateFileSystemEntries(path))
-            {
-                SwitchFiles.CheckPath(entry);
-                if (Directory.Exists(entry)) CheckTree(entry);
-            }
-        }
-        CheckTree(full);
-        try { Directory.Delete(full, true); }
+        try { SwitchFiles.DeletePrivateAttempt(root, directory); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         { throw new IOException("临时授权文件尚未清理，切换登录未保存。请重启额度工具后重新授权。"); }
     }

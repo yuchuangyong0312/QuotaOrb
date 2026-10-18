@@ -33,6 +33,8 @@ void Check(string name, bool ok) { if (!ok) throw new Exception("FAIL: " + name)
 async Task<bool> Reject(Func<Task> action) { try { await action(); return false; } catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or IOException or CryptographicException) { return true; } }
 Fixture New() => new(Path.Combine(root, Guid.NewGuid().ToString("N")));
 
+await CleanupChecks.RunAsync(root, Check);
+
 foreach (var wrapped in new[] { false, true })
 {
     var f = New(); var oldLogin = Fixture.Login("b", "old-desktop-copy");

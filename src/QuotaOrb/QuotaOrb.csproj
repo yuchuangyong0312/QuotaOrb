@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable><ImplicitUsings>disable</ImplicitUsings><AssemblyName>QuotaOrb</AssemblyName><RootNamespace>QuotaOrb</RootNamespace>
-    <Version>2.1.12</Version><RuntimeIdentifier>win-x64</RuntimeIdentifier><SelfContained>true</SelfContained>
+    <Version>2.1.14</Version><RuntimeIdentifier>win-x64</RuntimeIdentifier><SelfContained>true</SelfContained>
     <DebugType>none</DebugType><DebugSymbols>false</DebugSymbols>
     <PublishSingleFile>true</PublishSingleFile><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile><RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>

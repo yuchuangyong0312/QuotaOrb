@@ -12,15 +12,26 @@ internal static class SwitchFiles
             || !Guid.TryParseExact(Path.GetFileName(full), "N", out _)) throw new IOException("临时检查目录无法验证。");
         CheckPath(full);
         if (!Directory.Exists(full)) return;
+        var files = new List<string>();
         void CheckTree(string path)
         {
             foreach (var entry in Directory.EnumerateFileSystemEntries(path))
             {
                 CheckPath(entry);
                 if (Directory.Exists(entry)) CheckTree(entry);
+                else files.Add(entry);
             }
         }
         CheckTree(full);
+        // Official plugin downloads can leave read-only Git pack files behind.
+        // Validate the entire owned tree before changing any file attributes.
+        foreach (var file in files)
+        {
+            CheckPath(file);
+            var attributes = File.GetAttributes(file);
+            if ((attributes & FileAttributes.ReadOnly) != 0)
+                File.SetAttributes(file, attributes & ~FileAttributes.ReadOnly);
+        }
         Directory.Delete(full, true);
     }
 
