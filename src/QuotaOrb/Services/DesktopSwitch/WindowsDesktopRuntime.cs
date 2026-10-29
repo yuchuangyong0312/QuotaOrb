@@ -10,7 +10,7 @@ public sealed class WindowsDesktopRuntime : IDesktopRuntime
     private string? applicationId;
     public string Home => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
     private const string Family = "OpenAI.Codex_2p2nqsd0c76g0";
-    private static readonly HashSet<string> SupportedVersions = ["26.1007.2314.0", "26.1007.9446.0", "26.1013.3656.0", "26.1013.4894.0", "26.1016.6573.0", "26.1021.3705.0"];
+    private static readonly HashSet<string> SupportedVersions = ["26.1007.2314.0", "26.1007.9446.0", "26.1013.3656.0", "26.1013.4894.0", "26.1016.6573.0", "26.1021.3705.0", "26.1023.6621.0"];
     public WindowsDesktopRuntime(CodexInstallation installation) => this.installation = installation;
 
     public async Task ValidateAsync(CancellationToken token)
@@ -39,7 +39,7 @@ public sealed class WindowsDesktopRuntime : IDesktopRuntime
         }
         catch (JsonException) { throw new InvalidOperationException("无法识别本机 Codex 桌面安装信息。"); }
         var version = await RunAsync(new ProcessStartInfo(installation.RequireExecutable(), "--version") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true }, token);
-        if (version.Trim() is not ("codex-cli 0.162.0-alpha.17.2" or "codex-cli 0.163.0-alpha.10.2" or "codex-cli 0.163.0-alpha.11" or "codex-cli 0.164.0-alpha.11.1"))
+        if (version.Trim() is not ("codex-cli 0.162.0-alpha.17.2" or "codex-cli 0.163.0-alpha.10.2" or "codex-cli 0.163.0-alpha.11" or "codex-cli 0.164.0-alpha.11.1" or "codex-cli 0.165.0-alpha.1.2"))
             throw new InvalidOperationException("Codex 查询组件版本已变化，请先验证兼容性再切换。");
         applicationId = Family + "!App";
     }
